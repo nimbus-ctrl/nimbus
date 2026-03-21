@@ -1,0 +1,46 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+
+:root {
+  --bg-base: #0f0f1a;
+  --bg-surface: #16162a;
+  --bg-overlay: #1e1e3a;
+  --bg-tab: #12122080;
+  --bg-tab-active: #1e1e3a;
+  --accent: #7c6af7;
+  --accent-glow: #7c6af740;
+  --accent-2: #f76ac8;
+  --text-primary: #e2e0ff;
+  --text-secondary: #8b86c8;
+  --text-muted: #4a4870;
+  --border: #2a2850;
+  --border-active: #7c6af760;
+  --danger: #f76a6a;
+  --success: #6af7a0;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* xterm overrides */
+.xterm { height: 100%; }
+.xterm-viewport { background: transparent !important; }
+.xterm-screen { background: transparent !important; }

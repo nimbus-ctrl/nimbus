@@ -1,0 +1,56 @@
+{
+  "name": "nimbus",
+  "version": "0.1.0",
+  "description": "⚡ A beautiful, AI-powered terminal for macOS",
+  "main": "dist/main/index.js",
+  "author": "nimbus-ctrl",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build && electron-builder",
+    "preview": "electron-vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nimbus-ctrl/nimbus.git"
+  },
+  "build": {
+    "appId": "dev.nimbus.terminal",
+    "productName": "Nimbus",
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "files": [
+      "dist/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "node_modules/node-pty/build",
+        "to": "node_modules/node-pty/build"
+      }
+    ]
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^9.2.1",
+    "electron": "^41.0.3",
+    "electron-builder": "^26.8.1",
+    "electron-vite": "^5.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.1",
+    "wait-on": "^9.0.4"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
+    "framer-motion": "^12.38.0",
+    "node-pty": "^1.1.0",
+    "xterm": "^5.3.0",
+    "xterm-addon-fit": "^0.8.0",
+    "xterm-addon-search": "^0.13.0",
+    "xterm-addon-web-links": "^0.9.0"
+  }
+}
