@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nimbus AI - Design 4: Inline Terminal</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'JetBrains Mono', monospace;
+    background: #0f0f1a;
+    color: #e2e0ff;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .titlebar {
+    height: 40px;
+    background: #0f0f1a;
+    border-bottom: 1px solid #1e1e3a;
+    display: flex;
+    align-items: center;
+    padding: 0 16px 0 80px;
+  }
+
+  .tabbar {
+    height: 36px;
+    background: #0a0a14;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 4px;
+    border-bottom: 1px solid #1e1e3a;
+  }
+
+  .tab {
+    padding: 6px 14px;
+    font-size: 12px;
+    color: #4a4870;
+    border-radius: 6px;
+  }
+
+  .tab.active {
+    background: #1a1a2e;
+    color: #e2e0ff;
+  }
+
+  .terminal-area {
+    padding: 16px;
+    font-size: 13px;
+    line-height: 1.6;
+    height: calc(100vh - 76px);
+    overflow-y: auto;
+  }
+
+  .prompt { color: #6af7a0; }
+  .cmd { color: #e2e0ff; }
+  .output { color: #8886ab; }
+  .error { color: #f76a6a; }
+
+  .cursor {
+    display: inline-block;
+    width: 8px;
+    height: 16px;
+    background: #7c6af7;
+    animation: blink 1s step-end infinite;
+    vertical-align: text-bottom;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* AI inline block — appears right in the terminal flow */
+  .ai-inline {
+    margin: 8px 0;
+    border-left: 2px solid #7c6af7;
+    padding: 10px 14px;
+    background: rgba(124, 106, 247, 0.04);
+    border-radius: 0 8px 8px 0;
+    position: relative;
+  }
+
+  .ai-inline-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+
+  .ai-inline-header .nimbus-icon {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    background: linear-gradient(135deg, #7c6af7, #c56af7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 8px;
+    font-weight: 700;
+  }
+
+  .ai-inline-header .label {
+    font-size: 10px;
+    color: #7c6af7;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+
+  .ai-inline-header .dismiss {
+    margin-left: auto;
+    font-size: 10px;
+    color: #4a4870;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  .ai-inline-header .dismiss:hover { color: #e2e0ff; }
+
+  .ai-inline-body {
+    font-size: 12px;
+    line-height: 1.6;
+    color: #c8c6e0;
+  }
+
+  .ai-inline-body code {
+    background: #1a1a2e;
+    border: 1px solid #1e1e3a;
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: #6af7a0;
+    font-size: 11px;
+  }
+
+  .ai-suggestion {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    background: #0f0f1a;
+    border: 1px solid #1e1e3a;
+    border-radius: 6px;
+    padding: 6px 10px;
+  }
+
+  .ai-suggestion .cmd-text {
+    font-size: 12px;
+    color: #e2e0ff;
+    flex: 1;
+  }
+
+  .ai-suggestion button {
+    font-size: 9px;
+    font-family: inherit;
+    border-radius: 4px;
+    padding: 3px 8px;
+    cursor: pointer;
+    border: 1px solid;
+  }
+
+  .btn-accept {
+    background: rgba(106, 247, 160, 0.1);
+    border-color: rgba(106, 247, 160, 0.3) !important;
+    color: #6af7a0;
+  }
+
+  .btn-accept:hover { background: rgba(106, 247, 160, 0.2); }
+
+  .btn-dismiss {
+    background: transparent;
+    border-color: #1e1e3a !important;
+    color: #4a4870;
+  }
+
+  .btn-dismiss:hover { color: #e2e0ff; }
+
+  /* AI prompt prefix */
+  .ai-prompt-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .ai-prompt-prefix {
+    color: #7c6af7;
+    font-weight: 600;
+  }
+
+  .ai-prompt-text {
+    color: #c8c6e0;
+  }
+
+  .thinking-dots {
+    display: inline-flex;
+    gap: 3px;
+    margin-left: 4px;
+  }
+
+  .thinking-dots span {
+    width: 4px;
+    height: 4px;
+    background: #7c6af7;
+    border-radius: 50%;
+    animation: pulse 1.4s infinite;
+  }
+
+  .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes pulse {
+    0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+    40% { opacity: 1; transform: scale(1); }
+  }
+
+  .design-label {
+    position: fixed;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #7c6af7;
+    color: #0f0f1a;
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    z-index: 100;
+  }
+
+  .hint {
+    font-size: 10px;
+    color: #4a4870;
+    margin-top: 4px;
+  }
+
+  .hint kbd {
+    background: #1a1a2e;
+    border: 1px solid #1e1e3a;
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-family: inherit;
+  }
+</style>
+</head>
+<body>
+
+<div class="design-label">Design 4: Inline in Terminal Flow</div>
+
+<div class="titlebar"></div>
+<div class="tabbar">
+  <div class="tab active">Terminal 1</div>
+  <div class="tab">Terminal 2</div>
+</div>
+
+<div class="terminal-area">
+  <!-- Normal command -->
+  <div><span class="prompt">kartik@nimbus ~/project %</span> <span class="cmd">npm run build</span></div>
+  <div class="output">vite v5.2.0 building...</div>
+  <div class="error">ERROR: Cannot find module './utils/helpers'</div>
+  <div class="error">  at src/components/Dashboard.tsx:3:1</div>
+
+  <!-- AI auto-detects error and shows inline help -->
+  <div class="ai-inline">
+    <div class="ai-inline-header">
+      <span class="nimbus-icon">N</span>
+      <span class="label">NIMBUS</span>
+      <button class="dismiss">dismiss</button>
+    </div>
+    <div class="ai-inline-body">
+      The import path <code>./utils/helpers</code> doesn't exist. It looks like the file was moved. Did you mean:
+      <div class="ai-suggestion">
+        <span class="cmd-text">import { formatDate } from '<strong style="color:#6af7a0">../../utils/helpers</strong>'</span>
+        <button class="btn-accept">Apply</button>
+        <button class="btn-dismiss">Skip</button>
+      </div>
+    </div>
+  </div>
+
+  <br>
+
+  <!-- User asks AI directly with prefix -->
+  <div class="ai-prompt-line">
+    <span class="ai-prompt-prefix">nimbus &rsaquo;</span>
+    <span class="ai-prompt-text">how do I list all TODO comments in this project?</span>
+  </div>
+
+  <div class="ai-inline">
+    <div class="ai-inline-header">
+      <span class="nimbus-icon">N</span>
+      <span class="label">NIMBUS</span>
+      <button class="dismiss">dismiss</button>
+    </div>
+    <div class="ai-inline-body">
+      <div class="ai-suggestion">
+        <span class="cmd-text">grep -rn "TODO\|FIXME\|HACK" --include="*.ts" --include="*.tsx" .</span>
+        <button class="btn-accept">Run</button>
+        <button class="btn-dismiss">Copy</button>
+      </div>
+      <div class="hint">Press <kbd>Tab</kbd> to run, <kbd>Esc</kbd> to dismiss</div>
+    </div>
+  </div>
+
+  <br>
+
+  <!-- Normal command continues -->
+  <div><span class="prompt">kartik@nimbus ~/project %</span> <span class="cmd">grep -rn "TODO" --include="*.ts" .</span></div>
+  <div class="output">./src/api/routes.ts:42:  // TODO: add rate limiting</div>
+  <div class="output">./src/auth/session.ts:18:  // TODO: implement refresh tokens</div>
+  <div class="output">./src/db/migrations.ts:7:  // TODO: add rollback support</div>
+
+  <br>
+
+  <!-- Current line with AI thinking -->
+  <div class="ai-prompt-line">
+    <span class="ai-prompt-prefix">nimbus &rsaquo;</span>
+    <span class="ai-prompt-text">explain the rate limiting TODO</span>
+    <span class="thinking-dots"><span></span><span></span><span></span></span>
+  </div>
+
+</div>
+
+</body>
+</html>

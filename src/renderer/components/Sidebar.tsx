@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import type { Tab } from '../App'
 
@@ -22,15 +22,37 @@ interface Props {
 
 type Panel = 'bookmarks' | 'commands' | 'notes'
 
+const COMMANDS_KEY = 'nimbus:sidebar:commands'
+const NOTES_KEY = 'nimbus:sidebar:notes'
+
+function loadCommands(): SavedCommand[] {
+  try {
+    const raw = localStorage.getItem(COMMANDS_KEY)
+    if (!raw) return []
+    return (JSON.parse(raw) as SavedCommand[]).map(c => ({ ...c, createdAt: new Date(c.createdAt) }))
+  } catch { return [] }
+}
+
+function loadNotes(): Note[] {
+  try {
+    const raw = localStorage.getItem(NOTES_KEY)
+    if (!raw) return []
+    return (JSON.parse(raw) as Note[]).map(n => ({ ...n, createdAt: new Date(n.createdAt) }))
+  } catch { return [] }
+}
+
 export default function Sidebar({ tabs, onSelectTab }: Props) {
   const [activePanel, setActivePanel] = useState<Panel>('bookmarks')
-  const [commands, setCommands] = useState<SavedCommand[]>([])
-  const [notes, setNotes] = useState<Note[]>([])
+  const [commands, setCommands] = useState<SavedCommand[]>(loadCommands)
+  const [notes, setNotes] = useState<Note[]>(loadNotes)
   const [newCommand, setNewCommand] = useState('')
   const [newCommandDesc, setNewCommandDesc] = useState('')
   const [newNote, setNewNote] = useState('')
   const [addingCommand, setAddingCommand] = useState(false)
   const [addingNote, setAddingNote] = useState(false)
+
+  useEffect(() => { localStorage.setItem(COMMANDS_KEY, JSON.stringify(commands)) }, [commands])
+  useEffect(() => { localStorage.setItem(NOTES_KEY, JSON.stringify(notes)) }, [notes])
 
   const bookmarkedTabs = tabs.filter(t => t.bookmarked)
 
@@ -57,6 +79,9 @@ export default function Sidebar({ tabs, onSelectTab }: Props) {
     setNewNote('')
     setAddingNote(false)
   }
+
+  const deleteCommand = (id: string) => setCommands(prev => prev.filter(c => c.id !== id))
+  const deleteNote = (id: string) => setNotes(prev => prev.filter(n => n.id !== id))
 
   const panels: { id: Panel; label: string; emoji: string }[] = [
     { id: 'bookmarks', label: 'Bookmarks', emoji: '★' },
@@ -144,9 +169,15 @@ export default function Sidebar({ tabs, onSelectTab }: Props) {
                   border: '1px solid var(--border)',
                   borderRadius: 8,
                   padding: '8px 12px',
+                  position: 'relative',
                 }}
               >
-                <div style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--accent)', marginBottom: 2 }}>
+                <button
+                  onClick={() => deleteCommand(cmd.id)}
+                  style={deleteBtnStyle}
+                  title="Delete"
+                >×</button>
+                <div style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--accent)', marginBottom: 2, paddingRight: 16 }}>
                   $ {cmd.command}
                 </div>
                 {cmd.description && (
@@ -162,6 +193,7 @@ export default function Sidebar({ tabs, onSelectTab }: Props) {
                   placeholder="Command..."
                   value={newCommand}
                   onChange={e => setNewCommand(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') addCommand(); if (e.key === 'Escape') setAddingCommand(false) }}
                   style={inputStyle}
                 />
                 <input
@@ -197,11 +229,17 @@ export default function Sidebar({ tabs, onSelectTab }: Props) {
                   color: 'var(--text-primary)',
                   lineHeight: 1.5,
                   whiteSpace: 'pre-wrap',
+                  position: 'relative',
                 }}
               >
-                {note.content}
+                <button
+                  onClick={() => deleteNote(note.id)}
+                  style={deleteBtnStyle}
+                  title="Delete"
+                >×</button>
+                <div style={{ paddingRight: 16 }}>{note.content}</div>
                 <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
-                  {note.createdAt.toLocaleTimeString()}
+                  {note.createdAt.toLocaleDateString()} {note.createdAt.toLocaleTimeString()}
                 </div>
               </div>
             ))}
@@ -274,4 +312,18 @@ const addBtnStyle: React.CSSProperties = {
   cursor: 'pointer',
   width: '100%',
   transition: 'color 0.15s, border-color 0.15s',
+}
+
+const deleteBtnStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: 6,
+  right: 8,
+  background: 'transparent',
+  border: 'none',
+  color: 'var(--text-muted)',
+  fontSize: 14,
+  cursor: 'pointer',
+  lineHeight: 1,
+  padding: 0,
+  opacity: 0.6,
 }

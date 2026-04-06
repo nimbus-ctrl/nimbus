@@ -12,6 +12,6 @@ export default defineConfig({
   },
   renderer: {
     plugins: [react()],
-    build: { outDir: 'dist/renderer' }
+    build: { outDir: 'dist/renderer' },
   }
 })

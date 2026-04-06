@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nimbus AI - Design 5: Bottom Command Bar</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'JetBrains Mono', monospace;
+    background: #0f0f1a;
+    color: #e2e0ff;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .titlebar {
+    height: 40px;
+    background: #0f0f1a;
+    border-bottom: 1px solid #1e1e3a;
+    display: flex;
+    align-items: center;
+    padding: 0 16px 0 80px;
+  }
+
+  .tabbar {
+    height: 36px;
+    background: #0a0a14;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 4px;
+    border-bottom: 1px solid #1e1e3a;
+  }
+
+  .tab {
+    padding: 6px 14px;
+    font-size: 12px;
+    color: #4a4870;
+    border-radius: 6px;
+  }
+
+  .tab.active {
+    background: #1a1a2e;
+    color: #e2e0ff;
+  }
+
+  .terminal-area {
+    flex: 1;
+    padding: 16px;
+    font-size: 13px;
+    line-height: 1.6;
+    overflow-y: auto;
+  }
+
+  .prompt { color: #6af7a0; }
+  .cmd { color: #e2e0ff; }
+  .output { color: #8886ab; }
+  .cursor {
+    display: inline-block;
+    width: 8px;
+    height: 16px;
+    background: #7c6af7;
+    animation: blink 1s step-end infinite;
+    vertical-align: text-bottom;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* Bottom command bar — expanded state */
+  .command-bar {
+    background: #0a0a14;
+    border-top: 1px solid #1e1e3a;
+    flex-shrink: 0;
+    animation: expandUp 0.2s ease-out;
+  }
+
+  @keyframes expandUp {
+    from { max-height: 48px; }
+    to { max-height: 350px; }
+  }
+
+  /* Input row */
+  .cb-input-row {
+    display: flex;
+    align-items: center;
+    padding: 10px 16px;
+    gap: 10px;
+  }
+
+  .cb-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #7c6af7, #c56af7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+    box-shadow: 0 0 12px rgba(124, 106, 247, 0.3);
+  }
+
+  .cb-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #e2e0ff;
+    font-family: inherit;
+    font-size: 13px;
+  }
+
+  .cb-input::placeholder { color: #4a4870; }
+
+  .cb-mode-toggle {
+    display: flex;
+    background: #12122a;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid #1e1e3a;
+  }
+
+  .cb-mode {
+    font-size: 10px;
+    font-family: inherit;
+    padding: 4px 10px;
+    background: transparent;
+    border: none;
+    color: #4a4870;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .cb-mode.active {
+    background: rgba(124, 106, 247, 0.15);
+    color: #7c6af7;
+  }
+
+  .cb-mode:hover:not(.active) { color: #e2e0ff; }
+
+  /* Response area */
+  .cb-response {
+    border-top: 1px solid #1e1e3a;
+    padding: 14px 16px;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+
+  .cb-response-text {
+    font-size: 12px;
+    line-height: 1.7;
+    color: #c8c6e0;
+  }
+
+  .cb-response-text strong { color: #e2e0ff; }
+
+  .cb-code {
+    display: flex;
+    align-items: stretch;
+    background: #0f0f1a;
+    border: 1px solid #1e1e3a;
+    border-radius: 6px;
+    margin: 10px 0;
+    overflow: hidden;
+  }
+
+  .cb-code-content {
+    flex: 1;
+    padding: 10px 12px;
+    font-size: 12px;
+    color: #e2e0ff;
+    line-height: 1.5;
+  }
+
+  .cb-code-actions {
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid #1e1e3a;
+  }
+
+  .cb-code-actions button {
+    font-size: 10px;
+    font-family: inherit;
+    padding: 8px 12px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: background 0.15s;
+    flex: 1;
+    white-space: nowrap;
+  }
+
+  .cb-code-actions button:first-child {
+    border-bottom: 1px solid #1e1e3a;
+  }
+
+  .cb-code-actions .run {
+    color: #6af7a0;
+  }
+
+  .cb-code-actions .run:hover { background: rgba(106, 247, 160, 0.08); }
+
+  .cb-code-actions .copy {
+    color: #4a4870;
+  }
+
+  .cb-code-actions .copy:hover { background: #12122a; color: #e2e0ff; }
+
+  /* Quick actions */
+  .cb-quick {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+
+  .cb-quick button {
+    font-size: 10px;
+    font-family: inherit;
+    background: #12122a;
+    border: 1px solid #1e1e3a;
+    border-radius: 20px;
+    padding: 4px 12px;
+    color: #8886ab;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .cb-quick button:hover {
+    border-color: #7c6af7;
+    color: #7c6af7;
+  }
+
+  /* Status bar */
+  .cb-status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 16px;
+    border-top: 1px solid #1e1e3a;
+    font-size: 10px;
+    color: #4a4870;
+  }
+
+  .cb-status kbd {
+    background: #1a1a2e;
+    border: 1px solid #1e1e3a;
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-family: inherit;
+  }
+
+  .cb-status .model-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .cb-status .dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #6af7a0;
+    box-shadow: 0 0 4px #6af7a0;
+  }
+
+  .design-label {
+    position: fixed;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #7c6af7;
+    color: #0f0f1a;
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    z-index: 100;
+  }
+</style>
+</head>
+<body>
+
+<div class="design-label">Design 5: Bottom Command Bar (expandable)</div>
+
+<div class="titlebar"></div>
+<div class="tabbar">
+  <div class="tab active">Terminal 1</div>
+  <div class="tab">Terminal 2</div>
+</div>
+
+<div class="terminal-area">
+  <div><span class="prompt">kartik@nimbus ~/app %</span> <span class="cmd">ssh staging-server</span></div>
+  <div class="output">Welcome to Ubuntu 22.04.3 LTS</div>
+  <div class="output">Last login: Fri Mar 21 14:22:03 2026 from 192.168.1.100</div>
+  <br>
+  <div><span class="prompt">kartik@staging ~ $</span> <span class="cmd">df -h</span></div>
+  <div class="output">Filesystem      Size  Used Avail Use% Mounted on</div>
+  <div class="output">/dev/sda1        50G   47G  3.0G  94% /</div>
+  <div class="output">/dev/sdb1       200G  180G   20G  90% /data</div>
+  <br>
+  <div><span class="prompt">kartik@staging ~ $</span> <span class="cursor"></span></div>
+</div>
+
+<!-- Command bar -->
+<div class="command-bar">
+  <div class="cb-input-row">
+    <div class="cb-icon">N</div>
+    <input class="cb-input" value="disk is almost full, how do I clean up?" />
+    <div class="cb-mode-toggle">
+      <button class="cb-mode active">Chat</button>
+      <button class="cb-mode">Generate</button>
+    </div>
+  </div>
+
+  <div class="cb-response">
+    <div class="cb-response-text">
+      Your root partition is at <strong>94%</strong> — that's critical. Here's a safe cleanup sequence:
+    </div>
+
+    <div class="cb-response-text" style="margin-top: 8px; color: #8886ab;">1. Find the biggest offenders:</div>
+    <div class="cb-code">
+      <div class="cb-code-content">sudo du -sh /var/* 2>/dev/null | sort -rh | head -10</div>
+      <div class="cb-code-actions">
+        <button class="run">Run</button>
+        <button class="copy">Copy</button>
+      </div>
+    </div>
+
+    <div class="cb-response-text" style="color: #8886ab;">2. Clean package cache and old logs:</div>
+    <div class="cb-code">
+      <div class="cb-code-content">sudo apt-get clean && sudo journalctl --vacuum-size=100M</div>
+      <div class="cb-code-actions">
+        <button class="run">Run</button>
+        <button class="copy">Copy</button>
+      </div>
+    </div>
+
+    <div class="cb-response-text" style="color: #8886ab;">3. Remove old Docker images (if using Docker):</div>
+    <div class="cb-code">
+      <div class="cb-code-content">docker system prune -af --volumes</div>
+      <div class="cb-code-actions">
+        <button class="run">Run</button>
+        <button class="copy">Copy</button>
+      </div>
+    </div>
+
+    <div class="cb-quick">
+      <button>Show disk usage tree</button>
+      <button>Find files > 100MB</button>
+      <button>Clean /tmp</button>
+      <button>Check Docker</button>
+    </div>
+  </div>
+
+  <div class="cb-status">
+    <span><kbd>Cmd</kbd>+<kbd>J</kbd> toggle &middot; <kbd>Enter</kbd> send &middot; <kbd>Esc</kbd> collapse</span>
+    <span class="model-info"><span class="dot"></span> Claude Sonnet 4 &middot; has terminal context</span>
+  </div>
+</div>
+
+</body>
+</html>

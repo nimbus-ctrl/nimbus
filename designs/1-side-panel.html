@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nimbus AI - Design 1: Side Panel Chat</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'JetBrains Mono', monospace;
+    background: #0f0f1a;
+    color: #e2e0ff;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .titlebar {
+    height: 40px;
+    background: #0f0f1a;
+    border-bottom: 1px solid #1e1e3a;
+    display: flex;
+    align-items: center;
+    padding: 0 16px 0 80px;
+  }
+
+  .titlebar-title {
+    font-size: 12px;
+    color: #4a4870;
+    flex: 1;
+  }
+
+  .titlebar-btn {
+    background: transparent;
+    border: 1px solid #1e1e3a;
+    border-radius: 6px;
+    color: #4a4870;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .titlebar-btn:hover {
+    border-color: #7c6af7;
+    color: #7c6af7;
+  }
+
+  .titlebar-btn.active {
+    background: rgba(124, 106, 247, 0.1);
+    border-color: #7c6af7;
+    color: #7c6af7;
+  }
+
+  .tabbar {
+    height: 36px;
+    background: #0a0a14;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 4px;
+    border-bottom: 1px solid #1e1e3a;
+  }
+
+  .tab {
+    padding: 6px 14px;
+    font-size: 12px;
+    color: #4a4870;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .tab.active {
+    background: #1a1a2e;
+    color: #e2e0ff;
+  }
+
+  .main {
+    display: flex;
+    flex: 1;
+    height: calc(100vh - 76px);
+  }
+
+  /* Terminal */
+  .terminal-area {
+    flex: 1;
+    padding: 16px;
+    overflow-y: auto;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .prompt { color: #6af7a0; }
+  .cmd { color: #e2e0ff; }
+  .output { color: #8886ab; }
+  .cursor {
+    display: inline-block;
+    width: 8px;
+    height: 16px;
+    background: #7c6af7;
+    animation: blink 1s step-end infinite;
+    vertical-align: text-bottom;
+    margin-left: 2px;
+  }
+
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+
+  /* AI Side Panel */
+  .ai-panel {
+    width: 380px;
+    background: #0a0a14;
+    border-left: 1px solid #1e1e3a;
+    display: flex;
+    flex-direction: column;
+    animation: slideIn 0.25s ease-out;
+  }
+
+  @keyframes slideIn {
+    from { width: 0; opacity: 0; }
+    to { width: 380px; opacity: 1; }
+  }
+
+  .ai-header {
+    padding: 14px 16px;
+    border-bottom: 1px solid #1e1e3a;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .ai-header .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #7c6af7;
+    box-shadow: 0 0 8px #7c6af7;
+  }
+
+  .ai-header span {
+    font-size: 13px;
+    font-weight: 600;
+    color: #e2e0ff;
+  }
+
+  .ai-header .model-tag {
+    font-size: 10px;
+    color: #4a4870;
+    background: #1a1a2e;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-left: auto;
+  }
+
+  .ai-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .msg {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .msg-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #4a4870;
+  }
+
+  .msg-label.ai { color: #7c6af7; }
+
+  .msg-body {
+    font-size: 12px;
+    line-height: 1.6;
+    color: #c8c6e0;
+    padding: 10px 14px;
+    background: #12122a;
+    border-radius: 8px;
+    border: 1px solid #1e1e3a;
+  }
+
+  .msg-body.ai {
+    border-color: rgba(124, 106, 247, 0.2);
+    background: rgba(124, 106, 247, 0.05);
+  }
+
+  .msg-body code {
+    background: #1a1a2e;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: #6af7a0;
+    font-size: 11px;
+  }
+
+  .msg-body .code-block {
+    display: block;
+    background: #0f0f1a;
+    border: 1px solid #1e1e3a;
+    border-radius: 6px;
+    padding: 10px;
+    margin: 8px 0 4px;
+    font-size: 11px;
+    color: #e2e0ff;
+    position: relative;
+  }
+
+  .copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    font-size: 10px;
+    color: #4a4870;
+    background: #1a1a2e;
+    border: 1px solid #1e1e3a;
+    border-radius: 4px;
+    padding: 2px 8px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  .copy-btn:hover { color: #7c6af7; border-color: #7c6af7; }
+
+  .run-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: #6af7a0;
+    background: rgba(106, 247, 160, 0.08);
+    border: 1px solid rgba(106, 247, 160, 0.2);
+    border-radius: 4px;
+    padding: 3px 10px;
+    cursor: pointer;
+    font-family: inherit;
+    margin-top: 4px;
+  }
+
+  .run-btn:hover { background: rgba(106, 247, 160, 0.15); }
+
+  /* Input */
+  .ai-input-area {
+    padding: 12px 16px;
+    border-top: 1px solid #1e1e3a;
+  }
+
+  .ai-input-wrap {
+    display: flex;
+    align-items: center;
+    background: #12122a;
+    border: 1px solid #1e1e3a;
+    border-radius: 8px;
+    padding: 8px 12px;
+    gap: 8px;
+    transition: border-color 0.2s;
+  }
+
+  .ai-input-wrap:focus-within {
+    border-color: #7c6af7;
+  }
+
+  .ai-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #e2e0ff;
+    font-family: inherit;
+    font-size: 12px;
+  }
+
+  .ai-input::placeholder { color: #4a4870; }
+
+  .ai-send {
+    background: #7c6af7;
+    border: none;
+    border-radius: 6px;
+    color: #0f0f1a;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: opacity 0.15s;
+  }
+
+  .ai-send:hover { opacity: 0.85; }
+
+  .shortcut-hint {
+    font-size: 10px;
+    color: #4a4870;
+    margin-top: 6px;
+    text-align: center;
+  }
+
+  .shortcut-hint kbd {
+    background: #1a1a2e;
+    border: 1px solid #1e1e3a;
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 10px;
+    font-family: inherit;
+  }
+
+  .badge {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    display: inline-block;
+    margin-top: 2px;
+    background: rgba(124, 106, 247, 0.1);
+    color: #7c6af7;
+    border: 1px solid rgba(124, 106, 247, 0.2);
+  }
+
+  .design-label {
+    position: fixed;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #7c6af7;
+    color: #0f0f1a;
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    z-index: 100;
+  }
+</style>
+</head>
+<body>
+
+<div class="design-label">Design 1: Side Panel Chat</div>
+
+<div class="titlebar">
+  <span class="titlebar-title">Nimbus</span>
+  <button class="titlebar-btn active">AI Panel</button>
+</div>
+
+<div class="tabbar">
+  <div class="tab active">Terminal 1</div>
+  <div class="tab">Terminal 2</div>
+  <div class="tab" style="color: #f7d06a;">Server</div>
+</div>
+
+<div class="main">
+  <div class="terminal-area">
+    <div><span class="prompt">kartik@nimbus ~ %</span> <span class="cmd">git status</span></div>
+    <div class="output">On branch main</div>
+    <div class="output">Changes not staged for commit:</div>
+    <div class="output" style="color: #f76a6a;">  modified:   src/renderer/App.tsx</div>
+    <div class="output" style="color: #f76a6a;">  modified:   src/main/index.ts</div>
+    <br>
+    <div><span class="prompt">kartik@nimbus ~ %</span> <span class="cmd">npm run build</span></div>
+    <div class="output">vite v5.2.0 building for production...</div>
+    <div class="output" style="color: #6af7a0;">  Build completed in 2.4s</div>
+    <br>
+    <div><span class="prompt">kartik@nimbus ~ %</span> <span class="cursor"></span></div>
+  </div>
+
+  <div class="ai-panel">
+    <div class="ai-header">
+      <div class="dot"></div>
+      <span>Claude</span>
+      <span class="model-tag">Sonnet 4</span>
+    </div>
+
+    <div class="ai-messages">
+      <div class="msg">
+        <span class="msg-label">You</span>
+        <div class="msg-body">how do I squash my last 3 commits?</div>
+      </div>
+
+      <div class="msg">
+        <span class="msg-label ai">Claude</span>
+        <div class="msg-body ai">
+          Use interactive rebase to squash the last 3 commits:
+          <div class="code-block">
+            <button class="copy-btn">Copy</button>
+            git rebase -i HEAD~3
+          </div>
+          In the editor, change <code>pick</code> to <code>squash</code> (or <code>s</code>) for the commits you want to merge. Or for a quick squash without an editor:
+          <div class="code-block">
+            <button class="copy-btn">Copy</button>
+            git reset --soft HEAD~3 && git commit
+          </div>
+          <button class="run-btn">Run in terminal</button>
+        </div>
+      </div>
+
+      <div class="msg">
+        <span class="msg-label">You</span>
+        <div class="msg-body">what did that build error mean?</div>
+      </div>
+
+      <div class="msg">
+        <span class="msg-label ai">Claude</span>
+        <div class="msg-body ai">
+          Looking at your terminal output, the build actually <strong style="color:#6af7a0">succeeded</strong> — "Build completed in 2.4s" is a success message. No errors here!
+          <br><br>
+          <span class="badge">has terminal context</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-input-area">
+      <div class="ai-input-wrap">
+        <input class="ai-input" placeholder="Ask Claude anything..." />
+        <button class="ai-send">Send</button>
+      </div>
+      <div class="shortcut-hint"><kbd>Cmd</kbd> + <kbd>L</kbd> to toggle panel</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

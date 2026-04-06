@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nimbus AI - Design 2: Spotlight Overlay</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'JetBrains Mono', monospace;
+    background: #0f0f1a;
+    color: #e2e0ff;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .titlebar {
+    height: 40px;
+    background: #0f0f1a;
+    border-bottom: 1px solid #1e1e3a;
+    display: flex;
+    align-items: center;
+    padding: 0 16px 0 80px;
+  }
+
+  .tabbar {
+    height: 36px;
+    background: #0a0a14;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 4px;
+    border-bottom: 1px solid #1e1e3a;
+  }
+
+  .tab {
+    padding: 6px 14px;
+    font-size: 12px;
+    color: #4a4870;
+    border-radius: 6px;
+  }
+
+  .tab.active {
+    background: #1a1a2e;
+    color: #e2e0ff;
+  }
+
+  .terminal-area {
+    padding: 16px;
+    font-size: 13px;
+    line-height: 1.6;
+    height: calc(100vh - 76px);
+    filter: blur(1.5px);
+    opacity: 0.4;
+  }
+
+  .prompt { color: #6af7a0; }
+  .cmd { color: #e2e0ff; }
+  .output { color: #8886ab; }
+
+  /* Overlay backdrop */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 10, 20, 0.6);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 120px;
+    z-index: 10;
+  }
+
+  /* Spotlight card */
+  .spotlight {
+    width: 600px;
+    max-height: 500px;
+    background: #12122a;
+    border: 1px solid #2a2a4a;
+    border-radius: 14px;
+    box-shadow:
+      0 0 0 1px rgba(124, 106, 247, 0.1),
+      0 20px 60px rgba(0, 0, 0, 0.6),
+      0 0 40px rgba(124, 106, 247, 0.08);
+    overflow: hidden;
+    animation: popIn 0.2s ease-out;
+  }
+
+  @keyframes popIn {
+    from { transform: scale(0.95) translateY(-10px); opacity: 0; }
+    to { transform: scale(1) translateY(0); opacity: 1; }
+  }
+
+  .spotlight-input-row {
+    display: flex;
+    align-items: center;
+    padding: 14px 18px;
+    gap: 10px;
+    border-bottom: 1px solid #1e1e3a;
+  }
+
+  .spotlight-icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #7c6af7, #c56af7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    flex-shrink: 0;
+  }
+
+  .spotlight-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #e2e0ff;
+    font-family: inherit;
+    font-size: 15px;
+  }
+
+  .spotlight-input::placeholder { color: #4a4870; }
+
+  .spotlight-kbd {
+    font-size: 10px;
+    color: #4a4870;
+    background: #1a1a2e;
+    border: 1px solid #1e1e3a;
+    border-radius: 4px;
+    padding: 2px 6px;
+  }
+
+  /* Response area */
+  .spotlight-body {
+    padding: 18px;
+    max-height: 380px;
+    overflow-y: auto;
+  }
+
+  .ai-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: #7c6af7;
+    margin-bottom: 10px;
+  }
+
+  .ai-tag .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #7c6af7;
+    box-shadow: 0 0 6px #7c6af7;
+  }
+
+  .response-text {
+    font-size: 13px;
+    line-height: 1.7;
+    color: #c8c6e0;
+  }
+
+  .response-text strong { color: #e2e0ff; }
+
+  .code-block {
+    background: #0f0f1a;
+    border: 1px solid #1e1e3a;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin: 12px 0;
+    font-size: 12px;
+    color: #e2e0ff;
+    position: relative;
+  }
+
+  .code-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #1e1e3a;
+  }
+
+  .code-lang {
+    font-size: 10px;
+    color: #4a4870;
+    text-transform: uppercase;
+  }
+
+  .code-actions {
+    display: flex;
+    gap: 6px;
+  }
+
+  .code-actions button {
+    font-size: 10px;
+    font-family: inherit;
+    background: #1a1a2e;
+    border: 1px solid #1e1e3a;
+    border-radius: 4px;
+    padding: 2px 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-copy { color: #4a4870; }
+  .btn-copy:hover { color: #e2e0ff; border-color: #4a4870; }
+
+  .btn-run { color: #6af7a0; border-color: rgba(106, 247, 160, 0.3) !important; }
+  .btn-run:hover { background: rgba(106, 247, 160, 0.1); }
+
+  .code-line { line-height: 1.5; }
+  .code-line .kw { color: #c56af7; }
+  .code-line .str { color: #6af7a0; }
+  .code-line .flag { color: #6a9ff7; }
+  .code-line .num { color: #f7d06a; }
+
+  .spotlight-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 18px;
+    border-top: 1px solid #1e1e3a;
+    font-size: 10px;
+    color: #4a4870;
+  }
+
+  .spotlight-footer kbd {
+    background: #1a1a2e;
+    border: 1px solid #1e1e3a;
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-family: inherit;
+  }
+
+  .typing-indicator {
+    display: inline-flex;
+    gap: 4px;
+    margin-top: 8px;
+  }
+
+  .typing-indicator span {
+    width: 5px;
+    height: 5px;
+    background: #7c6af7;
+    border-radius: 50%;
+    animation: bounce 1.2s infinite;
+  }
+
+  .typing-indicator span:nth-child(2) { animation-delay: 0.15s; }
+  .typing-indicator span:nth-child(3) { animation-delay: 0.3s; }
+
+  @keyframes bounce {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+    30% { transform: translateY(-4px); opacity: 1; }
+  }
+
+  .design-label {
+    position: fixed;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #7c6af7;
+    color: #0f0f1a;
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    z-index: 100;
+  }
+</style>
+</head>
+<body>
+
+<div class="design-label">Design 2: Spotlight Overlay (Cmd+K)</div>
+
+<div class="titlebar"></div>
+<div class="tabbar">
+  <div class="tab active">Terminal 1</div>
+  <div class="tab">Terminal 2</div>
+</div>
+
+<div class="terminal-area">
+  <div><span class="prompt">kartik@nimbus ~ %</span> <span class="cmd">docker ps</span></div>
+  <div class="output">CONTAINER ID   IMAGE          STATUS         PORTS                    NAMES</div>
+  <div class="output">a1b2c3d4e5f6   postgres:16    Up 3 hours     0.0.0.0:5432->5432/tcp   nimbus-db</div>
+  <div class="output">f6e5d4c3b2a1   redis:7        Up 3 hours     0.0.0.0:6379->6379/tcp   nimbus-cache</div>
+  <br>
+  <div><span class="prompt">kartik@nimbus ~ %</span> <span class="cmd">curl -s localhost:3000/health | jq</span></div>
+  <div class="output">{</div>
+  <div class="output">  "status": "ok",</div>
+  <div class="output">  "uptime": 10842</div>
+  <div class="output">}</div>
+</div>
+
+<div class="overlay">
+  <div class="spotlight">
+    <div class="spotlight-input-row">
+      <div class="spotlight-icon">N</div>
+      <input class="spotlight-input" value="find all large files in this repo" />
+      <span class="spotlight-kbd">Esc</span>
+    </div>
+
+    <div class="spotlight-body">
+      <div class="ai-tag">
+        <span class="dot"></span>
+        Claude
+      </div>
+
+      <div class="response-text">
+        Here's a command to find files larger than <strong>10MB</strong> in your repo:
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">bash</span>
+          <div class="code-actions">
+            <button class="btn-copy">Copy</button>
+            <button class="btn-run">Run</button>
+          </div>
+        </div>
+        <div class="code-line"><span class="kw">find</span> . <span class="flag">-type</span> f <span class="flag">-size</span> <span class="num">+10M</span> <span class="flag">-not -path</span> <span class="str">'./.git/*'</span> \</div>
+        <div class="code-line">  | <span class="kw">xargs</span> <span class="kw">ls</span> <span class="flag">-lhS</span></div>
+      </div>
+
+      <div class="response-text">
+        Or to also check what git is tracking that's large:
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">bash</span>
+          <div class="code-actions">
+            <button class="btn-copy">Copy</button>
+            <button class="btn-run">Run</button>
+          </div>
+        </div>
+        <div class="code-line"><span class="kw">git</span> rev-list <span class="flag">--objects --all</span> \</div>
+        <div class="code-line">  | <span class="kw">git</span> cat-file <span class="flag">--batch-check=</span><span class="str">'%(objectsize) %(rest)'</span> \</div>
+        <div class="code-line">  | <span class="kw">sort</span> <span class="flag">-rn</span> | <span class="kw">head</span> <span class="flag">-20</span></div>
+      </div>
+    </div>
+
+    <div class="spotlight-footer">
+      <span><kbd>Enter</kbd> send &middot; <kbd>Tab</kbd> run highlighted</span>
+      <span>Claude Sonnet 4</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
