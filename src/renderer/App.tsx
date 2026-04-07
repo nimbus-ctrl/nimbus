@@ -6,6 +6,7 @@ import AiPanel, { type DockPosition } from './components/AiPanel'
 import SplitPaneContainer from './components/SplitPaneContainer'
 import WorkspaceSwitcher from './components/WorkspaceSwitcher'
 import CommandPalette from './components/CommandPalette'
+import CommandMemoryPalette from './components/CommandMemoryPalette'
 import {
   prepareMigration, getPaneBuffer, registerIncomingMigration, preloadBuffer,
   getPaneCwd, preloadCwd,
@@ -13,6 +14,7 @@ import {
 } from './components/Terminal'
 import type { CommandRecord } from './components/CommandCard'
 import { useCommands } from './hooks/useCommands'
+import { useCommandMemory } from './hooks/useCommandMemory'
 import type { SplitNode, SplitDirection } from './types/splitTree'
 import type { Workspace } from './types/workspace'
 import { splitPane, removePane, findAllPaneIds, setRatioAtBranch } from './utils/splitTree'
@@ -27,14 +29,25 @@ export interface Tab {
   activePaneId: string
 }
 
-let tabCounter = 2
 let workspaceCounter = 2
 
-function createTab(): Tab {
+function nextTerminalNumber(existingTabs: Tab[]): number {
+  const used = new Set(
+    existingTabs
+      .map(t => /^Terminal (\d+)$/.exec(t.title)?.[1])
+      .filter((n): n is string => n !== undefined)
+      .map(Number)
+  )
+  let n = 1
+  while (used.has(n)) n++
+  return n
+}
+
+function createTab(existingTabs: Tab[] = []): Tab {
   const paneId = crypto.randomUUID()
   return {
     id: crypto.randomUUID(),
-    title: `Terminal ${tabCounter++}`,
+    title: `Terminal ${nextTerminalNumber(existingTabs)}`,
     bookmarked: false,
     hasActivity: false,
     createdAt: new Date(),
@@ -152,6 +165,11 @@ export default function App() {
   const [aiPanelOpen, setAiPanelOpen] = useState(false)
   const [aiDockPosition, setAiDockPosition] = useState<DockPosition>('bottom')
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+  const [commandMemoryOpen, setCommandMemoryOpen] = useState(false)
+  const [historyEnabled, setHistoryEnabled] = useState<boolean>(
+    () => localStorage.getItem('nimbus:prefs:history') !== 'false'
+  )
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const renameTargetRef = useRef<string | null>(null)
   const initLoadedRef = useRef(false)
 
@@ -202,6 +220,27 @@ export default function App() {
         setActiveWorkspaceId(newWs.id)
       }
     })
+  }, [])
+
+  // ─── Fullscreen detection ──────────────────────────────────────────────────
+  useEffect(() => {
+    window.nimbus.window.isFullscreen().then(setIsFullscreen)
+    return window.nimbus.window.onFullscreen(setIsFullscreen)
+  }, [])
+
+  // ─── History preference — sync with native menu ────────────────────────────
+  useEffect(() => {
+    // Tell main the current state on load so the menu checkmark is correct
+    window.nimbus.ui.sendHistoryState(historyEnabled)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    // Listen for menu toggle
+    const off = window.nimbus.ui.onToggleHistory((enabled) => {
+      setHistoryEnabled(enabled)
+      localStorage.setItem('nimbus:prefs:history', String(enabled))
+    })
+    return off
   }, [])
 
   // ─── File menu: Save / Open workspace snapshots ────────────────────────────
@@ -385,8 +424,8 @@ export default function App() {
   }, [])
 
   // ─── Keyboard shortcuts (ref-based to register once, not on every render) ───
-  const stateRef = useRef({ tabs, activeTabId, commandPaletteOpen, workspaces, activeWorkspaceId })
-  stateRef.current = { tabs, activeTabId, commandPaletteOpen, workspaces, activeWorkspaceId }
+  const stateRef = useRef({ tabs, activeTabId, commandPaletteOpen, commandMemoryOpen, workspaces, activeWorkspaceId })
+  stateRef.current = { tabs, activeTabId, commandPaletteOpen, commandMemoryOpen, workspaces, activeWorkspaceId }
   // Actions ref — updated after callbacks are defined (below)
   const actionsRef = useRef<{
     splitActivePane: (d: 'vertical' | 'horizontal') => void
@@ -410,6 +449,11 @@ export default function App() {
       if (e.metaKey && e.key === 'k') {
         e.preventDefault()
         setCommandPaletteOpen(prev => !prev)
+        return
+      }
+      if (e.metaKey && e.key === 'm') {
+        e.preventDefault()
+        setCommandMemoryOpen(prev => !prev)
         return
       }
 
@@ -481,13 +525,14 @@ export default function App() {
 
   // ─── Tab actions ────────────────────────────────────────────────────────────
 
+  const MAX_TABS = 20
+
   const addTab = useCallback(() => {
-    const tab = createTab()
-    updateActiveWorkspace(ws => ({
-      ...ws,
-      tabs: [...ws.tabs, tab],
-      activeTabId: tab.id,
-    }))
+    updateActiveWorkspace(ws => {
+      if (ws.tabs.length >= MAX_TABS) return ws
+      const tab = createTab(ws.tabs)
+      return { ...ws, tabs: [...ws.tabs, tab], activeTabId: tab.id }
+    })
   }, [updateActiveWorkspace])
 
   const closeTab = useCallback((id: string) => {
@@ -497,7 +542,7 @@ export default function App() {
 
       const next = ws.tabs.filter(t => t.id !== id)
       if (next.length === 0) {
-        const newTab = createTab()
+        const newTab = createTab([])
         return { ...ws, tabs: [newTab], activeTabId: newTab.id }
       }
       const newActiveTabId = ws.activeTabId === id
@@ -541,7 +586,7 @@ export default function App() {
     updateActiveWorkspace(ws => {
       const next = ws.tabs.filter(t => t.id !== id)
       if (next.length === 0) {
-        const newTab = createTab()
+        const newTab = createTab([])
         return { ...ws, tabs: [newTab], activeTabId: newTab.id }
       }
       const newActiveTabId = ws.activeTabId === id
@@ -577,7 +622,7 @@ export default function App() {
         // Last pane — close the tab
         const next = ws.tabs.filter(t => t.id !== ws.activeTabId)
         if (next.length === 0) {
-          const newTab = createTab()
+          const newTab = createTab([])
           return { ...ws, tabs: [newTab], activeTabId: newTab.id }
         }
         return { ...ws, tabs: next, activeTabId: next[next.length - 1].id }
@@ -612,7 +657,7 @@ export default function App() {
       const remainingPanes = findAllPaneIds(newRoot)
       const newTab: Tab = {
         id: newTabId,
-        title: `Terminal ${tabCounter++}`,
+        title: `Terminal ${nextTerminalNumber(ws.tabs)}`,
         bookmarked: false,
         hasActivity: false,
         createdAt: new Date(),
@@ -742,7 +787,7 @@ export default function App() {
           // Remove tab from source
           const remaining = ws.tabs.filter(t => t.id !== tabId)
           if (remaining.length === 0) {
-            const newTab = createTab()
+            const newTab = createTab([])
             return { ...ws, tabs: [newTab], activeTabId: newTab.id }
           }
           const newActiveTabId = ws.activeTabId === tabId
@@ -765,6 +810,11 @@ export default function App() {
 
   const activeTab = tabs.find(t => t.id === activeTabId)
   const canDetach = activeTab ? activeTab.splitRoot.type !== 'leaf' : false
+  const activePaneId = activeTab?.activePaneId ?? ''
+  const activeCwd = getPaneCwd(activePaneId) ?? ''
+
+  // ─── Command Memory ─────────────────────────────────────────────────────────
+  const commandMemory = useCommandMemory(activeCwd, activeWorkspaceId)
 
   const promptRename = useCallback((id: string) => {
     const tab = tabs.find(t => t.id === id)
@@ -801,7 +851,7 @@ export default function App() {
     setAiDockPosition,
     aiPanelOpen,
     sidebarOpen,
-    activePaneId: activeTab?.activePaneId ?? '',
+    activePaneId,
     promptRename,
     // Workspace actions
     workspaces,
@@ -819,20 +869,28 @@ export default function App() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--bg-base)' }}>
-      {/* Title bar drag region with workspace switcher */}
+      {/* Unified bar — workspace switcher + tabs + controls, single row */}
       <div style={{
         height: 40,
-        WebkitAppRegion: 'drag',
         display: 'flex',
         alignItems: 'center',
-        paddingLeft: 80,
-        paddingRight: 12,
         background: 'var(--bg-base)',
         borderBottom: '1px solid var(--border)',
         flexShrink: 0,
+        WebkitAppRegion: 'drag',
       } as React.CSSProperties}>
-        {/* Workspace switcher — left side of title bar */}
-        <div style={{ WebkitAppRegion: 'no-drag', flexShrink: 0 } as React.CSSProperties}>
+
+        {/* Left: traffic-light space + workspace switcher */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          paddingLeft: isFullscreen ? 12 : 80,
+          paddingRight: 10,
+          height: '100%',
+          borderRight: '1px solid var(--border)',
+          flexShrink: 0,
+          WebkitAppRegion: 'no-drag',
+        } as React.CSSProperties}>
           <WorkspaceSwitcher
             workspaces={workspaces}
             activeWorkspaceId={activeWorkspaceId}
@@ -844,8 +902,49 @@ export default function App() {
           />
         </div>
 
-        <div style={{ flex: 1, WebkitAppRegion: 'drag' } as React.CSSProperties} />
-        <div style={{ display: 'flex', gap: 6, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+        {/* Middle: tabs — crossfade on workspace switch */}
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={activeWorkspaceId}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.1, ease: 'linear' }}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              display: 'flex',
+              alignItems: 'center',
+              height: '100%',
+              WebkitAppRegion: 'no-drag',
+            } as React.CSSProperties}
+          >
+            <TabBar
+              tabs={tabs}
+              activeTabId={activeTabId}
+              onSelect={setActiveTabId}
+              onAdd={addTab}
+              onClose={closeTab}
+              onToggleBookmark={toggleBookmark}
+              onRename={renameTab}
+              onMoveToNewWindow={moveTabToNewWindow}
+              workspaces={workspaces}
+              currentWorkspaceId={activeWorkspaceId}
+              onMoveTabToWorkspace={moveTabToWorkspace}
+              embedded
+            />
+          </motion.div>
+        </AnimatePresence>
+
+        {/* Right: drag spacer + controls */}
+        <div style={{ flex: '0 0 20px', WebkitAppRegion: 'drag' } as React.CSSProperties} />
+        <div style={{
+          display: 'flex',
+          gap: 6,
+          paddingRight: 12,
+          flexShrink: 0,
+          WebkitAppRegion: 'no-drag',
+        } as React.CSSProperties}>
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
@@ -883,32 +982,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Tab bar — crossfades when switching workspaces */}
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.div
-          key={activeWorkspaceId}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.1, ease: 'linear' }}
-          style={{ flexShrink: 0 }}
-        >
-          <TabBar
-            tabs={tabs}
-            activeTabId={activeTabId}
-            onSelect={setActiveTabId}
-            onAdd={addTab}
-            onClose={closeTab}
-            onToggleBookmark={toggleBookmark}
-            onRename={renameTab}
-            onMoveToNewWindow={moveTabToNewWindow}
-            workspaces={workspaces}
-            currentWorkspaceId={activeWorkspaceId}
-            onMoveTabToWorkspace={moveTabToWorkspace}
-          />
-        </motion.div>
-      </AnimatePresence>
-
       {/* Main area */}
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
@@ -942,6 +1015,16 @@ export default function App() {
                   onDetachPane={canDetach && isVisible ? detachPane : undefined}
                   isTabActive={isVisible}
                   onActivity={!isVisible ? handleActivity : undefined}
+                  onCommandRun={isVisible ? commandMemory.recordUsage : undefined}
+                  historyEnabled={historyEnabled}
+                  onSaveCommand={isVisible ? (cmd) => commandMemory.addCommand({
+                    title: cmd.slice(0, 60),
+                    command: cmd,
+                    note: '',
+                    tags: [],
+                    scope: 'global',
+                    pinned: false,
+                  }) : undefined}
                 />
               </div>
             ))}
@@ -967,7 +1050,28 @@ export default function App() {
                 transition={{ duration: 0.2, ease: 'easeInOut' }}
                 style={{ overflow: 'hidden', flexShrink: 0 }}
               >
-                <Sidebar tabs={tabs} onSelectTab={setActiveTabId} />
+                <Sidebar
+                  tabs={tabs}
+                  onSelectTab={setActiveTabId}
+                  memoryCommands={commandMemory.visibleCommands}
+                  onAddMemoryCommand={commandMemory.addCommand}
+                  onDeleteMemoryCommand={commandMemory.deleteCommand}
+                  onTogglePinMemoryCommand={commandMemory.togglePin}
+                  onRunCommand={(cmd) => {
+                    if (activePaneId) {
+                      window.nimbus.pty.write(activePaneId, '\x15' + cmd + '\r')
+                      commandMemory.recordUsage(cmd, activeCwd)
+                    }
+                  }}
+                  onInsertCommand={(cmd) => {
+                    if (activePaneId) {
+                      window.nimbus.pty.write(activePaneId, '\x15' + cmd)
+                      commandMemory.recordUsage(cmd, activeCwd)
+                    }
+                  }}
+                  activeWorkspaceId={activeWorkspaceId}
+                  projectRoot={commandMemory.context.projectRoot}
+                />
               </motion.div>
             )}
           </AnimatePresence>
@@ -989,6 +1093,24 @@ export default function App() {
         isOpen={commandPaletteOpen}
         commands={commands}
         onClose={() => setCommandPaletteOpen(false)}
+      />
+
+      <CommandMemoryPalette
+        isOpen={commandMemoryOpen}
+        commands={commandMemory.visibleCommands}
+        suggestions={commandMemory.suggestions}
+        context={commandMemory.context}
+        activePaneId={activePaneId}
+        onClose={() => setCommandMemoryOpen(false)}
+        onSaveCommand={(command, title) => commandMemory.addCommand({
+          title: title ?? command.slice(0, 60),
+          command,
+          note: '',
+          tags: [],
+          scope: 'global',
+          pinned: false,
+        })}
+        onRecordUsage={(cmd) => commandMemory.recordUsage(cmd, activeCwd)}
       />
     </div>
   )

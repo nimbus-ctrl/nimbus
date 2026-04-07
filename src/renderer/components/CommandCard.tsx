@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 export interface CommandRecord {
@@ -14,6 +15,7 @@ interface Props {
   record: CommandRecord
   collapsed: boolean
   onToggle: () => void
+  onSaveToMemory?: () => void
 }
 
 function formatDuration(ms: number): string {
@@ -52,16 +54,19 @@ const STATUS = {
   },
 }
 
-export default function CommandCard({ record, collapsed, onToggle }: Props) {
+export default function CommandCard({ record, collapsed, onToggle, onSaveToMemory }: Props) {
   const isRunning  = record.endTime === undefined
   const isSuccess  = !isRunning && record.exitCode === 0
   const status     = isRunning ? STATUS.running : isSuccess ? STATUS.success : STATUS.failure
   const duration   = record.endTime ? formatDuration(record.endTime - record.startTime) : null
   const hasOutput  = record.outputLines.length > 0
   const exitLabel  = !isRunning && !isSuccess ? `exit ${record.exitCode}` : null
+  const [hovered, setHovered] = useState(false)
 
   return (
     <motion.div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.15 }}
@@ -172,6 +177,27 @@ export default function CommandCard({ record, collapsed, onToggle }: Props) {
           }}>
             {status.icon}
           </span>
+
+          {/* Save to Memory — appears on hover */}
+          {onSaveToMemory && hovered && !isRunning && (
+            <button
+              title="Save to Command Memory"
+              onClick={e => { e.stopPropagation(); onSaveToMemory() }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--accent)',
+                fontSize: 11,
+                cursor: 'pointer',
+                padding: '0 2px',
+                lineHeight: 1,
+                opacity: 0.7,
+                fontFamily: 'system-ui, sans-serif',
+              }}
+            >
+              ⊕
+            </button>
+          )}
         </div>
       </div>
 

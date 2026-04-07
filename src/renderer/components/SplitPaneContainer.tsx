@@ -11,6 +11,9 @@ interface Props {
   onRatioChange: (branchId: string, ratio: number) => void
   onDetachPane?: (paneId: string) => void
   onActivity?: (paneId: string) => void
+  onCommandRun?: (command: string, cwd: string) => void
+  onSaveCommand?: (command: string) => void
+  historyEnabled?: boolean
   isTabActive: boolean
 }
 
@@ -21,6 +24,9 @@ export default function SplitPaneContainer({
   onRatioChange,
   onDetachPane,
   onActivity,
+  onCommandRun,
+  onSaveCommand,
+  historyEnabled,
   isTabActive,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -46,6 +52,9 @@ export default function SplitPaneContainer({
           onPaneClick={onPaneClick}
           onDetachPane={canDetach ? onDetachPane : undefined}
           onActivity={onActivity}
+          onCommandRun={onCommandRun}
+          onSaveCommand={onSaveCommand}
+          historyEnabled={historyEnabled}
         />
       ))}
 
@@ -74,6 +83,9 @@ const PaneLeaf = memo(function PaneLeaf({
   onPaneClick,
   onDetachPane,
   onActivity,
+  onCommandRun,
+  onSaveCommand,
+  historyEnabled,
 }: {
   paneId: string
   left: number
@@ -84,6 +96,9 @@ const PaneLeaf = memo(function PaneLeaf({
   onPaneClick: (id: string) => void
   onDetachPane?: (id: string) => void
   onActivity?: (paneId: string) => void
+  onCommandRun?: (command: string, cwd: string) => void
+  onSaveCommand?: (command: string) => void
+  historyEnabled?: boolean
 }) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
 
@@ -140,7 +155,7 @@ const PaneLeaf = memo(function PaneLeaf({
         overflow: 'hidden',
       }}
     >
-      <Terminal tabId={paneId} isActive={isActive} onActivity={onActivity ? () => onActivity(paneId) : undefined} />
+      <Terminal tabId={paneId} isActive={isActive} onActivity={onActivity ? () => onActivity(paneId) : undefined} onCommandRun={onCommandRun} onSaveCommand={onSaveCommand} historyEnabled={historyEnabled} />
 
       {contextMenu && (
         <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={closeMenu}>

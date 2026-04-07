@@ -13,6 +13,9 @@ interface Props {
   tabId: string
   isActive: boolean
   onActivity?: () => void
+  onCommandRun?: (command: string, cwd: string) => void
+  onSaveCommand?: (command: string) => void
+  historyEnabled?: boolean
 }
 
 const nimbusTheme = {
@@ -58,6 +61,8 @@ declare global {
       window: {
         create: (initData?: unknown) => Promise<{ success: boolean }>
         getInitData: () => Promise<unknown>
+        isFullscreen: () => Promise<boolean>
+        onFullscreen: (cb: (fullscreen: boolean) => void) => () => void
       }
       workspace: {
         save: (name: string, data: string) => Promise<{ success: boolean; path?: string }>
@@ -71,6 +76,13 @@ declare global {
         onToken: (requestId: string, cb: (token: string) => void) => () => void
         onDone: (requestId: string, cb: () => void) => () => void
         onError: (requestId: string, cb: (error: string) => void) => () => void
+      }
+      project: {
+        detectRoot: (cwd: string) => Promise<{ root: string | null }>
+      }
+      ui: {
+        onToggleHistory: (cb: (enabled: boolean) => void) => () => void
+        sendHistoryState: (enabled: boolean) => void
       }
     }
   }
@@ -238,7 +250,7 @@ function stripAnsi(s: string): string {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default memo(function Terminal({ tabId, isActive, onActivity }: Props) {
+export default memo(function Terminal({ tabId, isActive, onActivity, onCommandRun, onSaveCommand, historyEnabled = true }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<XTerm | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -246,6 +258,7 @@ export default memo(function Terminal({ tabId, isActive, onActivity }: Props) {
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isActiveRef = useRef(isActive)
   const onActivityRef = useRef(onActivity)
+  const onCommandRunRef = useRef(onCommandRun)
   const hasNotifiedActivityRef = useRef(false)
   const searchOpenRef = useRef(false)
   const initializedRef = useRef(false)
@@ -382,6 +395,7 @@ export default memo(function Terminal({ tabId, isActive, onActivity }: Props) {
   }, [isActive])
 
   useEffect(() => { onActivityRef.current = onActivity }, [onActivity])
+  useEffect(() => { onCommandRunRef.current = onCommandRun }, [onCommandRun])
 
   // Keep module-level command record map current so App.tsx can snapshot it
   useEffect(() => {
@@ -439,7 +453,8 @@ export default memo(function Terminal({ tabId, isActive, onActivity }: Props) {
         e.key === 'd' || e.key === 'D' ||
         e.key === 'w' || e.key === 'j' ||
         e.key === 't' || e.key === 'T' ||
-        e.key === 'k' || e.key === 'f'
+        e.key === 'k' || e.key === 'f' ||
+        e.key === 'm'
       )) {
         return false
       }
@@ -450,10 +465,17 @@ export default memo(function Terminal({ tabId, isActive, onActivity }: Props) {
       window.nimbus.pty.write(tabId, data)
     })
 
-    const safeFit = () => {
-      if (containerRef.current && containerRef.current.offsetWidth > 0) {
-        fitAddon.fit()
+    const safeFit = (): boolean => {
+      try {
+        const el = containerRef.current
+        if (el && el.offsetWidth > 0 && el.offsetHeight > 0) {
+          fitAddon.fit()
+          return true
+        }
+      } catch (e) {
+        console.warn('[nimbus] fitAddon.fit() error:', e)
       }
+      return false
     }
 
     // Restore buffer if this pane was migrated from another tab
@@ -487,10 +509,9 @@ export default memo(function Terminal({ tabId, isActive, onActivity }: Props) {
       pendingCommandRecords.delete(tabId)
     }, 500)
 
-    requestAnimationFrame(() => {
-      safeFit()
-      // Anchor detection cursor to current position so preloaded/migrated
-      // buffer content is never mistakenly detected as new output
+    // PTY creation is isolated so a fit() error can never prevent the shell from starting.
+    const startPty = () => {
+      // Anchor detection cursor so preloaded/migrated buffer isn't re-detected
       lastDetectedLineRef.current = xterm.buffer.active.baseY + xterm.buffer.active.cursorY
 
       if (isMigrated) {
@@ -519,6 +540,22 @@ export default memo(function Terminal({ tabId, isActive, onActivity }: Props) {
           })
           .catch(err => console.error('[nimbus] PTY create error', err))
       }
+    }
+
+    // Two-frame initialization: first RAF fits the terminal once layout is committed;
+    // if the container still has no dimensions (display:none→flex transition hasn't
+    // flushed yet), the second RAF retries. PTY creation always runs.
+    requestAnimationFrame(() => {
+      const ready = safeFit()
+      if (ready) {
+        startPty()
+      } else {
+        // Container not sized yet — wait one more frame then start regardless
+        requestAnimationFrame(() => {
+          safeFit()
+          startPty()
+        })
+      }
     })
 
     let ptyReady = false
@@ -546,6 +583,10 @@ export default memo(function Terminal({ tabId, isActive, onActivity }: Props) {
           activeRecordRef.current = rec
           captureOutputRef.current = false
           setCommandRecords(prev => [...prev, rec])
+          // Notify app-level usage recording
+          if (ev.command.trim()) {
+            onCommandRunRef.current?.(ev.command, currentCwdRef.current)
+          }
         } else if (ev.type === 'C') {
           // Output is about to start
           captureOutputRef.current = true
@@ -614,7 +655,7 @@ export default memo(function Terminal({ tabId, isActive, onActivity }: Props) {
         e.key === 'd' || e.key === 'D' ||
         e.key === 'w' || e.key === 'j' ||
         e.key === 't' || e.key === 'T' ||
-        e.key === 'k'
+        e.key === 'k' || e.key === 'm'
       )) return
 
       const target = e.target as HTMLElement
@@ -674,8 +715,8 @@ export default memo(function Terminal({ tabId, isActive, onActivity }: Props) {
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
 
-      {/* ── Command cards panel (only when there are records) ── */}
-      {commandRecords.length > 0 && (
+      {/* ── Command cards panel (only when history is enabled and there are records) ── */}
+      {historyEnabled && commandRecords.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', flex: showCards ? '0 1 45%' : '0 0 auto', minHeight: 0 }}>
 
           {/* Panel header */}
@@ -755,6 +796,7 @@ export default memo(function Terminal({ tabId, isActive, onActivity }: Props) {
                   record={rec}
                   collapsed={collapsedCards.has(rec.id)}
                   onToggle={() => toggleCard(rec.id)}
+                  onSaveToMemory={onSaveCommand ? () => onSaveCommand(rec.command) : undefined}
                 />
               ))}
             </div>

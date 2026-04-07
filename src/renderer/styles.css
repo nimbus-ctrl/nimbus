@@ -35,10 +35,13 @@ html, body, #root {
 }
 
 /* Scrollbar */
-::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* Hide scrollbar on tab bar */
+.tab-bar-scroll::-webkit-scrollbar { display: none; }
 
 /* xterm overrides */
 .xterm { height: 100%; }

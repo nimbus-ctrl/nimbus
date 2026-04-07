@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { Tab } from '../App'
 import type { Workspace } from '../types/workspace'
@@ -15,12 +15,37 @@ interface Props {
   workspaces: Workspace[]
   currentWorkspaceId: string
   onMoveTabToWorkspace: (tabId: string, workspaceId: string) => void
+  /** When true, renders without its own background/border/height container — parent provides those */
+  embedded?: boolean
 }
 
-export default function TabBar({ tabs, activeTabId, onSelect, onAdd, onClose, onToggleBookmark, onRename, onMoveToNewWindow, workspaces, currentWorkspaceId, onMoveTabToWorkspace }: Props) {
+export default function TabBar({ tabs, activeTabId, onSelect, onAdd, onClose, onToggleBookmark, onRename, onMoveToNewWindow, workspaces, currentWorkspaceId, onMoveTabToWorkspace, embedded }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; tabId: string } | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const prevTabCountRef = useRef(tabs.length)
+
+  // Scroll to end when a new tab is added
+  useEffect(() => {
+    if (tabs.length > prevTabCountRef.current && scrollRef.current) {
+      scrollRef.current.scrollLeft = scrollRef.current.scrollWidth
+    }
+    prevTabCountRef.current = tabs.length
+  }, [tabs.length])
+
+  // Redirect vertical mouse-wheel to horizontal scroll
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaX !== 0) return // already horizontal (trackpad), let it pass
+      e.preventDefault()
+      el.scrollLeft += e.deltaY
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
 
   const startEdit = (tab: Tab) => {
     setEditingId(tab.id)
@@ -40,7 +65,17 @@ export default function TabBar({ tabs, activeTabId, onSelect, onAdd, onClose, on
   const closeMenu = useCallback(() => setContextMenu(null), [])
 
   return (
-    <div style={{
+    <div ref={scrollRef} className="tab-bar-scroll" style={embedded ? {
+      display: 'flex',
+      alignItems: 'center',
+      overflowX: 'auto',
+      overflowY: 'hidden',
+      flex: 1,
+      height: '100%',
+      gap: 2,
+      padding: '0 8px',
+      scrollbarWidth: 'none',
+    } : {
       display: 'flex',
       alignItems: 'center',
       background: 'var(--bg-base)',
@@ -51,15 +86,17 @@ export default function TabBar({ tabs, activeTabId, onSelect, onAdd, onClose, on
       height: 38,
       gap: 2,
       padding: '0 8px',
+      scrollbarWidth: 'none',
     }}>
       <AnimatePresence initial={false}>
         {tabs.map(tab => (
           <motion.div
             key={tab.id}
             layout
-            initial={{ opacity: 0, width: 0 }}
-            animate={{ opacity: 1, width: 'auto' }}
-            exit={{ opacity: 0, width: 0 }}
+            initial={{ opacity: 0, scaleX: 0.7 }}
+            animate={{ opacity: 1, scaleX: 1 }}
+            exit={{ opacity: 0, scaleX: 0.7 }}
+            transition={{ duration: 0.08, ease: 'easeOut' }}
             onContextMenu={(e) => handleContextMenu(e, tab.id)}
             style={{
               display: 'flex',

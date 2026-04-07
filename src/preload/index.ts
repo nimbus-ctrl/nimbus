@@ -29,6 +29,12 @@ contextBridge.exposeInMainWorld('nimbus', {
   window: {
     create: (initData?: unknown) => ipcRenderer.invoke('window:create', { initData }) as Promise<{ success: boolean }>,
     getInitData: () => ipcRenderer.invoke('window:getInitData') as Promise<unknown>,
+    isFullscreen: () => ipcRenderer.invoke('window:isFullscreen') as Promise<boolean>,
+    onFullscreen: (cb: (fullscreen: boolean) => void) => {
+      const handler = (_: unknown, value: boolean) => cb(value)
+      ipcRenderer.on('window:fullscreen', handler)
+      return () => ipcRenderer.removeListener('window:fullscreen', handler)
+    },
   },
   workspace: {
     save: (name: string, data: string) =>
@@ -64,6 +70,20 @@ contextBridge.exposeInMainWorld('nimbus', {
     onError: (requestId: string, cb: (error: string) => void) => {
       ipcRenderer.on(`ai:error:${requestId}`, (_, error) => cb(error))
       return () => ipcRenderer.removeAllListeners(`ai:error:${requestId}`)
+    },
+  },
+  project: {
+    detectRoot: (cwd: string) =>
+      ipcRenderer.invoke('project:detectRoot', { cwd }) as Promise<{ root: string | null }>,
+  },
+  ui: {
+    onToggleHistory: (cb: (enabled: boolean) => void) => {
+      const handler = (_: unknown, enabled: boolean) => cb(enabled)
+      ipcRenderer.on('menu:toggle-history', handler)
+      return () => ipcRenderer.removeListener('menu:toggle-history', handler)
+    },
+    sendHistoryState: (enabled: boolean) => {
+      ipcRenderer.send('prefs:history-state', enabled)
     },
   },
 })

@@ -101,6 +101,9 @@ function createWindow() {
     win.webContents.focus()
   })
 
+  win.on('enter-full-screen', () => win.webContents.send('window:fullscreen', true))
+  win.on('leave-full-screen', () => win.webContents.send('window:fullscreen', false))
+
   // ── Security: Block in-app navigation to external URLs ──
   win.webContents.on('will-navigate', (event, url) => {
     const rendererUrl = process.env['ELECTRON_RENDERER_URL']
@@ -206,7 +209,13 @@ ipcMain.handle('pty:create', (_, args) => {
   const rows = validateDimension(args?.rows, 24)
 
   if (ptyProcesses.has(id)) {
-    return { success: false, error: 'PTY already exists' }
+    // Reconnect to existing PTY — happens in React StrictMode where effects
+    // run twice: the first RAF creates the PTY before the cleanup's kill
+    // arrives, so the second RAF finds it already running. Resize to the
+    // requested dimensions and treat it as success.
+    const existing = ptyProcesses.get(id)!
+    try { existing.resize(cols, rows) } catch { /* ignore stale resize */ }
+    return { success: true }
   }
   if (ptyProcesses.size >= MAX_PTY_COUNT) {
     return { success: false, error: 'Maximum terminal limit reached' }
@@ -449,6 +458,10 @@ ipcMain.handle('window:getInitData', (event) => {
   return data
 })
 
+ipcMain.handle('window:isFullscreen', (event) => {
+  return BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false
+})
+
 // ─── Workspace snapshots ─────────────────────────────────────────────────────
 
 ipcMain.handle('workspace:save', async (event, args) => {
@@ -465,6 +478,53 @@ ipcMain.handle('workspace:save', async (event, args) => {
   if (result.canceled || !result.filePath) return { success: false }
   fs.writeFileSync(result.filePath, data, 'utf-8')
   return { success: true, path: result.filePath }
+})
+
+// ─── Project root detection ──────────────────────────────────────────────────
+
+const PROJECT_ROOT_MARKERS = [
+  '.git', 'package.json', 'go.mod', 'Cargo.toml', 'pyproject.toml',
+  'setup.py', 'Makefile', 'pom.xml', 'build.gradle', '.hg', '.svn',
+]
+
+ipcMain.handle('project:detectRoot', (_, args) => {
+  const cwd = args?.cwd
+  if (typeof cwd !== 'string' || !cwd) return { root: null }
+
+  try {
+    let dir = path.resolve(cwd)
+    const home = os.homedir()
+    const root = path.parse(dir).root
+
+    while (dir !== root) {
+      for (const marker of PROJECT_ROOT_MARKERS) {
+        if (fs.existsSync(path.join(dir, marker))) {
+          return { root: dir }
+        }
+      }
+      const parent = path.dirname(dir)
+      // Stop at home directory to avoid false positives
+      if (parent === home || parent === dir) break
+      dir = parent
+    }
+  } catch { /* ignore */ }
+
+  return { root: null }
+})
+
+// ─── History preference (synced with renderer via IPC) ───────────────────────
+
+// Tracks the renderer's current state so the menu checkmark stays in sync.
+// Defaults to true; renderer corrects this on load via 'prefs:history-state'.
+let historyEnabled = true
+
+ipcMain.on('prefs:history-state', (_, enabled: boolean) => {
+  historyEnabled = enabled
+  // Update the live menu item's checked property
+  const menu = Menu.getApplicationMenu()
+  const viewMenu = menu?.items.find(item => item.label === 'View')
+  const historyItem = viewMenu?.submenu?.items.find(item => item.id === 'toggle-history')
+  if (historyItem) historyItem.checked = enabled
 })
 
 // ─── App lifecycle ───────────────────────────────────────────────────────────
@@ -523,8 +583,40 @@ app.whenReady().then(() => {
         },
       ],
     },
-    { role: 'editMenu' },
-    { role: 'viewMenu' },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        {
+          id: 'toggle-history',
+          label: 'Show History',
+          type: 'checkbox',
+          checked: historyEnabled,
+          accelerator: 'CmdOrCtrl+Shift+H',
+          click: (menuItem, win) => {
+            historyEnabled = menuItem.checked
+            win?.webContents.send('menu:toggle-history', menuItem.checked)
+          },
+        },
+        { type: 'separator' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+        ...(isDev ? [
+          { type: 'separator' as const },
+          { role: 'toggleDevTools' as const },
+        ] : []),
+      ],
+    },
     {
       label: 'Window',
       submenu: [
