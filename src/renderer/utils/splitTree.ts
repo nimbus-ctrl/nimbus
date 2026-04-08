@@ -1,5 +1,27 @@
 import type { SplitNode, SplitDirection } from '../types/splitTree'
 
+/** Count the number of leaf panes in a subtree. */
+function countLeaves(node: SplitNode): number {
+  if (node.type === 'leaf') return 1
+  return countLeaves(node.first) + countLeaves(node.second)
+}
+
+/**
+ * Recalculate every branch's ratio so all leaf panes occupy equal area.
+ * Called after every split so new panes don't get squeezed into a corner.
+ */
+function equalizeRatios(node: SplitNode): SplitNode {
+  if (node.type === 'leaf') return node
+  const n1 = countLeaves(node.first)
+  const n2 = countLeaves(node.second)
+  return {
+    ...node,
+    ratio: n1 / (n1 + n2),
+    first: equalizeRatios(node.first),
+    second: equalizeRatios(node.second),
+  }
+}
+
 /** Split a leaf pane into two. Returns the new tree and the new pane's ID. */
 export function splitPane(
   root: SplitNode,
@@ -29,7 +51,8 @@ export function splitPane(
     }
   }
 
-  return { root: walk(root), newPaneId }
+  // Equalize all branch ratios so every pane gets equal screen space
+  return { root: equalizeRatios(walk(root)), newPaneId }
 }
 
 /** Remove a pane. Returns null if the tree is now empty. */

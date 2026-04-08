@@ -4,10 +4,14 @@ import { FitAddon } from 'xterm-addon-fit'
 import { WebLinksAddon } from 'xterm-addon-web-links'
 import { ImageAddon } from 'xterm-addon-image'
 import { SearchAddon } from 'xterm-addon-search'
+import { SerializeAddon } from 'xterm-addon-serialize'
 import 'xterm/css/xterm.css'
 import InlineOverlay, { RichPanel, type OverlayBlock } from './InlineOverlay'
 import { detectRichContent } from '../utils/contentDetectors'
 import CommandCard, { type CommandRecord } from './CommandCard'
+import { analyzeCommandRisk, type RiskResult } from '../utils/commandRisk'
+import { getPreviewRequest, previewLabel, type PreviewResult } from '../utils/commandPreview'
+import { RiskConfirmation, RiskToast } from './RiskGuard'
 
 interface Props {
   tabId: string
@@ -84,6 +88,12 @@ declare global {
         onToggleHistory: (cb: (enabled: boolean) => void) => () => void
         sendHistoryState: (enabled: boolean) => void
       }
+      context: {
+        gitBranch: (cwd: string) => Promise<{ branch: string | null }>
+      }
+      preview: {
+        run: (req: { type: string; args: string[]; cwd: string }) => Promise<{ output: string; error?: string }>
+      }
     }
   }
 }
@@ -93,6 +103,7 @@ declare global {
 // the PTY alive so the new Terminal instance can reconnect.
 
 const xtermInstances = new Map<string, XTerm>()
+const serializeAddons = new Map<string, SerializeAddon>()
 
 /** Access a pane's xterm instance (for clear, copy, etc.) */
 export function getXtermInstance(paneId: string): XTerm | undefined {
@@ -119,15 +130,33 @@ function serializeBuffer(xterm: XTerm): string {
  * so that Terminal cleanup skips killing its PTY.
  */
 export function prepareMigration(paneId: string) {
+  const serAddon = serializeAddons.get(paneId)
   const xterm = xtermInstances.get(paneId)
-  if (xterm) {
-    savedBuffers.set(paneId, serializeBuffer(xterm))
+
+  let bufferContent = ''
+  if (serAddon) {
+    try { bufferContent = serAddon.serialize() } catch { /* ignore */ }
   }
+  // Fallback to plain text if SerializeAddon produced nothing
+  if (!bufferContent && xterm) {
+    bufferContent = serializeBuffer(xterm)
+  }
+  if (bufferContent) savedBuffers.set(paneId, bufferContent)
+
+  const cwd = paneCwds.get(paneId)
+  if (cwd) pendingCwds.set(paneId, cwd)
+
+  // Preserve command history cards so they survive the remount
+  const records = paneCommandRecordsMap.get(paneId)
+  if (records && records.length > 0) pendingCommandRecords.set(paneId, [...records])
+
   migratingPanes.add(paneId)
 }
 
 /** Get serialized buffer content for a pane (for cross-window transfer) */
 export function getPaneBuffer(paneId: string): string {
+  const serAddon = serializeAddons.get(paneId)
+  if (serAddon) return serAddon.serialize()
   const xterm = xtermInstances.get(paneId)
   return xterm ? serializeBuffer(xterm) : ''
 }
@@ -160,6 +189,7 @@ export function preloadBuffer(paneId: string, content: string) {
 
 const paneCwds = new Map<string, string>()         // live: updated on every OSC 633 P
 const pendingCwds = new Map<string, string>()      // set before mount, read at PTY create time
+const cwdListeners = new Map<string, (cwd: string) => void>()
 
 /** Returns the last known CWD for a pane (used when saving a snapshot). */
 export function getPaneCwd(paneId: string): string | undefined {
@@ -169,6 +199,12 @@ export function getPaneCwd(paneId: string): string | undefined {
 /** Queue a CWD to be passed to the PTY when this pane next creates its process. */
 export function preloadCwd(paneId: string, cwd: string) {
   if (cwd) pendingCwds.set(paneId, cwd)
+}
+
+/** Subscribe to CWD changes for a specific pane. Returns an unsubscribe function. */
+export function subscribeCwd(paneId: string, listener: (cwd: string) => void): () => void {
+  cwdListeners.set(paneId, listener)
+  return () => { if (cwdListeners.get(paneId) === listener) cwdListeners.delete(paneId) }
 }
 
 // ─── Command record tracking (for workspace snapshot) ────────────────────────
@@ -284,6 +320,14 @@ export default memo(function Terminal({ tabId, isActive, onActivity, onCommandRu
   const captureOutputRef = useRef(false)
   const currentCwdRef = useRef('~')
   const cardsScrollRef = useRef<HTMLDivElement>(null)
+
+  // ── Risk Guard state ──────────────────────────────────────────────────────
+  const currentInputRef = useRef('')
+  const pendingRiskRef = useRef(false) // true while destructive overlay is showing — blocks re-entry
+  const [pendingRisk, setPendingRisk] = useState<{ command: string; risk: RiskResult } | null>(null)
+  const [riskToast, setRiskToast] = useState<{ key: number; risk: RiskResult } | null>(null)
+  const [preview, setPreview] = useState<PreviewResult | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
 
   const toggleCard = useCallback((id: string) => {
     setCollapsedCards(prev => {
@@ -443,6 +487,10 @@ export default memo(function Terminal({ tabId, isActive, onActivity, onCommandRu
       }
     })
 
+    const serializeAddon = new SerializeAddon()
+    xterm.loadAddon(serializeAddon)
+    serializeAddons.set(tabId, serializeAddon)
+
     xtermRef.current = xterm
     fitAddonRef.current = fitAddon
     xtermInstances.set(tabId, xterm)
@@ -462,6 +510,69 @@ export default memo(function Terminal({ tabId, isActive, onActivity, onCommandRu
     })
 
     xterm.onData((data) => {
+      // While a destructive-command overlay is showing, swallow ALL input
+      // (the overlay's keyboard handler takes over Enter/Escape)
+      if (pendingRiskRef.current) return
+
+      // Track typed input for risk analysis
+      if (data === '\r') {
+        // Read the actual command from the xterm buffer — this captures
+        // tab-completed text that onData never sees (PTY echo, not keystrokes)
+        const buf = xterm.buffer.active
+        const line = buf.getLine(buf.baseY + buf.cursorY)
+        const rawLine = line?.translateToString().trimEnd() ?? ''
+        // Greedy match to find the last prompt suffix ($ % # >) and take the rest
+        const bufferMatch = rawLine.match(/.*[$%#>]\s+(.+)$/)
+        const bufferCommand = bufferMatch ? bufferMatch[1].trim() : ''
+        // Fall back to char-tracked input if buffer parse yields nothing
+        const command = bufferCommand || currentInputRef.current.trim()
+        currentInputRef.current = ''
+
+        if (command) {
+          const risk = analyzeCommandRisk(command)
+          if (risk.level === 'destructive') {
+            // Block — show confirmation overlay; fetch preview async
+            pendingRiskRef.current = true
+            setPendingRisk({ command, risk })
+            setPreview(null)
+            const previewReq = getPreviewRequest(command, currentCwdRef.current)
+            if (previewReq) {
+              setPreviewLoading(true)
+              // Convert typed PreviewRequest fields to generic args[]
+              const args: string[] = []
+              if ('path' in previewReq && previewReq.path) args.push(previewReq.path)
+              if ('maxDepth' in previewReq && previewReq.maxDepth != null) args.push('-maxdepth', String(previewReq.maxDepth))
+              if ('flags' in previewReq && previewReq.flags) args.push(previewReq.flags)
+              if ('pid' in previewReq && previewReq.pid != null) args.push(String(previewReq.pid))
+              if ('name' in previewReq && previewReq.name) args.push(previewReq.name)
+              window.nimbus.preview.run({ type: previewReq.type, args, cwd: previewReq.cwd }).then(res => {
+                const lines = res.output ? res.output.split('\n').filter(Boolean) : []
+                setPreview({ lines, label: previewReq.label ?? previewLabel(previewReq.type), error: res.error })
+                setPreviewLoading(false)
+              }).catch(() => setPreviewLoading(false))
+            }
+            return // don't write to PTY yet
+          }
+          if (risk.level === 'elevated' || risk.level === 'network') {
+            setRiskToast({ key: Date.now(), risk })
+          }
+        }
+        window.nimbus.pty.write(tabId, data)
+        return
+      }
+      // Track characters; reset on Ctrl+C, Ctrl+U, or history navigation
+      if (data === '\x03' || data === '\x15') {
+        currentInputRef.current = ''
+      } else if (data === '\x1b[A' || data === '\x1b[B') {
+        // Up/Down arrow — shell will echo a history item; clear our tracking
+        // so the buffer-read at Enter time is used instead
+        currentInputRef.current = ''
+      } else if (data === '\x7f') {
+        // Backspace
+        currentInputRef.current = currentInputRef.current.slice(0, -1)
+      } else if (data.length === 1 && data >= ' ') {
+        currentInputRef.current += data
+      }
       window.nimbus.pty.write(tabId, data)
     })
 
@@ -614,6 +725,7 @@ export default memo(function Terminal({ tabId, isActive, onActivity, onCommandRu
         } else if (ev.type === 'P') {
           currentCwdRef.current = ev.cwd
           paneCwds.set(tabId, ev.cwd)   // keep snapshot-accessible map current
+          cwdListeners.get(tabId)?.(ev.cwd)
           // Update cwd on running record
           const rec = activeRecordRef.current
           if (rec) {
@@ -684,6 +796,7 @@ export default memo(function Terminal({ tabId, isActive, onActivity, onCommandRu
     return () => {
       console.log('[nimbus] Terminal cleanup', tabId, migratingPanes.has(tabId) ? '(migrating — keeping PTY)' : '')
       xtermInstances.delete(tabId)
+      serializeAddons.delete(tabId)
       offData()
       window.removeEventListener('keydown', handleKey)
       resizeObserver.disconnect()
@@ -711,6 +824,21 @@ export default memo(function Terminal({ tabId, isActive, onActivity, onCommandRu
       })
     }
   }, [isActive])
+
+  const handleRiskConfirm = useCallback(() => {
+    if (!pendingRisk) return
+    pendingRiskRef.current = false
+    setPendingRisk(null)
+    setPreview(null)
+    window.nimbus.pty.write(tabId, '\r')
+  }, [pendingRisk, tabId])
+
+  const handleRiskCancel = useCallback(() => {
+    pendingRiskRef.current = false
+    setPendingRisk(null)
+    setPreview(null)
+    window.nimbus.pty.write(tabId, '\x15') // Ctrl+U clears the line
+  }, [tabId])
 
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
@@ -807,6 +935,14 @@ export default memo(function Terminal({ tabId, isActive, onActivity, onCommandRu
       {/* ── Terminal area ── */}
       <div style={{ flex: 1, minHeight: 0, position: 'relative', display: 'flex' }}>
         <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+          {/* RiskToast — non-blocking, stays as absolute overlay */}
+          {riskToast && (
+            <RiskToast
+              key={riskToast.key}
+              level={riskToast.risk.level}
+              reasons={riskToast.risk.reasons}
+            />
+          )}
           <div
             ref={containerRef}
             onClick={() => xtermRef.current?.focus()}
@@ -875,6 +1011,19 @@ export default memo(function Terminal({ tabId, isActive, onActivity, onCommandRu
           <RichPanel block={panelBlock} onClose={closePanel} />
         )}
       </div>
+
+      {/* ── Risk confirmation — flex item BELOW terminal so xterm shrinks to make room ── */}
+      {pendingRisk && (
+        <RiskConfirmation
+          command={pendingRisk.command}
+          risk={pendingRisk.risk}
+          preview={preview}
+          previewLoading={previewLoading}
+          onConfirm={handleRiskConfirm}
+          onCancel={handleRiskCancel}
+          onFitTerminal={() => fitAddonRef.current?.fit()}
+        />
+      )}
     </div>
   )
 })

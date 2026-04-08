@@ -4,6 +4,7 @@ import * as fs from 'fs'
 import * as pty from 'node-pty'
 import * as os from 'os'
 import Anthropic from '@anthropic-ai/sdk'
+import { execFile } from 'child_process'
 
 app.setName('Nimbus')
 
@@ -199,7 +200,7 @@ function setupShellIntegration(): string | null {
 
 // ─── PTY management ──────────────────────────────────────────────────────────
 
-const MAX_PTY_COUNT = 20
+const MAX_PTY_COUNT = 200
 const MAX_WRITE_LENGTH = 1_048_576 // 1MB
 const ptyProcesses = new Map<string, pty.IPty>()
 
@@ -510,6 +511,52 @@ ipcMain.handle('project:detectRoot', (_, args) => {
   } catch { /* ignore */ }
 
   return { root: null }
+})
+
+// ─── Context identity (git branch lookup) ────────────────────────────────────
+
+function runWithTimeout(cmd: string, args: string[], cwd: string, timeoutMs: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = execFile(cmd, args, { cwd, timeout: timeoutMs }, (err, stdout) => {
+      if (err) reject(err)
+      else resolve(stdout.trim())
+    })
+    setTimeout(() => { child.kill(); reject(new Error('timeout')) }, timeoutMs)
+  })
+}
+
+ipcMain.handle('context:gitBranch', async (_, args) => {
+  const cwd = args?.cwd
+  if (typeof cwd !== 'string' || !cwd) return { branch: null }
+  try {
+    const branch = await runWithTimeout('git', ['rev-parse', '--abbrev-ref', 'HEAD'], cwd, 2000)
+    return { branch: branch || null }
+  } catch {
+    return { branch: null }
+  }
+})
+
+// ─── Command Preview Engine ───────────────────────────────────────────────────
+
+const PREVIEW_ALLOW: Record<string, { cmd: string; args: (a: string[]) => string[] }> = {
+  find:        { cmd: 'find',    args: (a) => a },
+  git_clean_n: { cmd: 'git',     args: (a) => ['clean', '-n', ...a] },
+  ps_pid:      { cmd: 'ps',      args: (a) => ['-p', a[0], '-o', 'pid,comm,args'] },
+  pgrep:       { cmd: 'pgrep',   args: (a) => ['-l', ...a] },
+  docker_df:   { cmd: 'docker',  args: () => ['system', 'df'] },
+  stat:        { cmd: 'stat',    args: (a) => a },
+}
+
+ipcMain.handle('preview:run', async (_, req) => {
+  const { type, args, cwd } = req as { type: string; args: string[]; cwd: string }
+  const spec = PREVIEW_ALLOW[type]
+  if (!spec) return { output: '', error: 'unknown preview type' }
+  try {
+    const output = await runWithTimeout(spec.cmd, spec.args(args), cwd, 3000)
+    return { output }
+  } catch (e) {
+    return { output: '', error: String(e) }
+  }
 })
 
 // ─── History preference (synced with renderer via IPC) ───────────────────────

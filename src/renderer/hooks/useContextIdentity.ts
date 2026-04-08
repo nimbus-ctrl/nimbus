@@ -61,7 +61,7 @@ export function useContextIdentity(activePaneId: string): ContextIdentity {
     loadBranch(initial)
 
     // Subscribe to future CWD changes from this pane
-    const unsub = subscribeCwd(activePaneId, (newCwd) => {
+    const unsub = subscribeCwd(activePaneId, (newCwd: string) => {
       setCwd(newCwd)
       loadBranch(newCwd)
     })

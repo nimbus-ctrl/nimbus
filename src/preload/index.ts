@@ -86,4 +86,12 @@ contextBridge.exposeInMainWorld('nimbus', {
       ipcRenderer.send('prefs:history-state', enabled)
     },
   },
+  context: {
+    gitBranch: (cwd: string) =>
+      ipcRenderer.invoke('context:gitBranch', { cwd }) as Promise<{ branch: string | null }>,
+  },
+  preview: {
+    run: (req: { type: string; args: string[]; cwd: string }) =>
+      ipcRenderer.invoke('preview:run', req) as Promise<{ output: string; error?: string }>,
+  },
 })

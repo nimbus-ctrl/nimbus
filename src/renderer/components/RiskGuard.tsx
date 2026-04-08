@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { RiskResult, RiskLevel } from '../utils/commandRisk'
-import { RISK_DISPLAY, trustCommand } from '../utils/commandRisk'
+import { RISK_DISPLAY } from '../utils/commandRisk'
 import type { PreviewResult } from '../utils/commandPreview'
 
 // ─── Blocking confirmation (destructive commands) ─────────────────────────────
@@ -13,9 +13,10 @@ interface ConfirmProps {
   previewLoading: boolean
   onConfirm: () => void
   onCancel: () => void
+  onFitTerminal?: () => void
 }
 
-export function RiskConfirmation({ command, risk, preview, previewLoading, onConfirm, onCancel }: ConfirmProps) {
+export function RiskConfirmation({ command, risk, preview, previewLoading, onConfirm, onCancel, onFitTerminal }: ConfirmProps) {
   const display = RISK_DISPLAY[risk.level]
 
   // Keyboard: Enter = confirm, Escape = cancel
@@ -28,23 +29,20 @@ export function RiskConfirmation({ command, risk, preview, previewLoading, onCon
     return () => window.removeEventListener('keydown', handler, { capture: true })
   }, [onConfirm, onCancel])
 
-  const handleTrust = useCallback(() => {
-    trustCommand(command)
-    onConfirm()
-  }, [command, onConfirm])
+  // Refit the terminal when this panel mounts/unmounts so xterm fills available space
+  useEffect(() => {
+    onFitTerminal?.()
+    return () => { onFitTerminal?.() }
+  }, [onFitTerminal])
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 8 }}
+      exit={{ opacity: 0, y: 4 }}
       transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
       style={{
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        zIndex: 50,
+        flexShrink: 0,
         background: 'var(--bg-overlay)',
         borderTop: `1px solid ${display.color}40`,
         backdropFilter: 'blur(8px)',
@@ -119,23 +117,6 @@ export function RiskConfirmation({ command, risk, preview, previewLoading, onCon
           <ActionButton onClick={onCancel} color="var(--text-muted)">
             Cancel <Kbd>Esc</Kbd>
           </ActionButton>
-          <div style={{ flex: 1 }} />
-          <button
-            onClick={handleTrust}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-muted)',
-              fontSize: 11,
-              cursor: 'pointer',
-              padding: '2px 6px',
-              opacity: 0.55,
-              fontFamily: 'inherit',
-            }}
-            title="Skip this warning for this exact command in the future"
-          >
-            Trust & run
-          </button>
         </div>
       </div>
     </motion.div>

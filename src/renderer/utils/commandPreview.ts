@@ -13,6 +13,7 @@ export type PreviewType =
 export interface PreviewRequest {
   type: PreviewType
   cwd: string
+  label?: string      // override the generic type label
   // type-specific params
   path?: string
   maxDepth?: number
@@ -66,7 +67,7 @@ export function getPreviewRequest(command: string, cwd: string): PreviewRequest 
   // rm (recursive or wildcard) → find the target path
   if (/\brm\b/.test(cmd)) {
     const path = extractRmTarget(cmd)
-    if (path) return { type: 'find', cwd, path, maxDepth: 4 }
+    if (path) return { type: 'find', cwd, path, maxDepth: 4, label: 'Files that would be deleted' }
   }
 
   // shred / dd → stat the target

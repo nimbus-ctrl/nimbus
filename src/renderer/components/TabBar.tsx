@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, Reorder } from 'framer-motion'
 import type { Tab } from '../App'
 import type { Workspace } from '../types/workspace'
 
@@ -15,11 +15,12 @@ interface Props {
   workspaces: Workspace[]
   currentWorkspaceId: string
   onMoveTabToWorkspace: (tabId: string, workspaceId: string) => void
+  onReorder: (tabs: Tab[]) => void
   /** When true, renders without its own background/border/height container — parent provides those */
   embedded?: boolean
 }
 
-export default function TabBar({ tabs, activeTabId, onSelect, onAdd, onClose, onToggleBookmark, onRename, onMoveToNewWindow, workspaces, currentWorkspaceId, onMoveTabToWorkspace, embedded }: Props) {
+export default function TabBar({ tabs, activeTabId, onSelect, onAdd, onClose, onToggleBookmark, onRename, onMoveToNewWindow, workspaces, currentWorkspaceId, onMoveTabToWorkspace, onReorder, embedded }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; tabId: string } | null>(null)
@@ -88,11 +89,17 @@ export default function TabBar({ tabs, activeTabId, onSelect, onAdd, onClose, on
       padding: '0 8px',
       scrollbarWidth: 'none',
     }}>
-      <AnimatePresence initial={false}>
+      <Reorder.Group
+        axis="x"
+        values={tabs}
+        onReorder={onReorder}
+        style={{ display: 'flex', gap: 2, alignItems: 'center', listStyle: 'none', padding: 0, margin: 0 }}
+      >
+        <AnimatePresence initial={false}>
         {tabs.map(tab => (
-          <motion.div
+          <Reorder.Item
             key={tab.id}
-            layout
+            value={tab}
             initial={{ opacity: 0, scaleX: 0.7 }}
             animate={{ opacity: 1, scaleX: 1 }}
             exit={{ opacity: 0, scaleX: 0.7 }}
@@ -107,13 +114,12 @@ export default function TabBar({ tabs, activeTabId, onSelect, onAdd, onClose, on
               borderRadius: 6,
               background: tab.id === activeTabId ? 'var(--bg-tab-active)' : 'var(--bg-tab)',
               border: `1px solid ${tab.id === activeTabId ? 'var(--border-active)' : 'transparent'}`,
-              cursor: 'pointer',
+              cursor: 'grab',
               whiteSpace: 'nowrap',
               minWidth: 100,
               maxWidth: 180,
               flexShrink: 0,
               boxShadow: tab.id === activeTabId ? '0 0 12px var(--accent-glow)' : 'none',
-              transition: 'box-shadow 0.2s',
             }}
             onClick={() => onSelect(tab.id)}
           >
@@ -176,9 +182,10 @@ export default function TabBar({ tabs, activeTabId, onSelect, onAdd, onClose, on
                 ×
               </button>
             </div>
-          </motion.div>
+          </Reorder.Item>
         ))}
-      </AnimatePresence>
+        </AnimatePresence>
+      </Reorder.Group>
 
       {/* Add tab */}
       <motion.button

@@ -1,6 +1,13 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import type { Workspace } from '../types/workspace'
+import type { Workspace, EnvLabel } from '../types/workspace'
+
+const ENV_COLORS: Record<EnvLabel, string> = {
+  local:   'var(--text-muted)',
+  dev:     'var(--success)',
+  staging: 'var(--warning)',
+  prod:    'var(--danger)',
+}
 
 interface Props {
   workspaces: Workspace[]
@@ -10,6 +17,7 @@ interface Props {
   onRename: (id: string, name: string) => void
   onDelete: (id: string) => void
   onMoveToNewWindow: (id: string) => void
+  onSetEnvLabel: (id: string, label: EnvLabel | undefined) => void
 }
 
 export default function WorkspaceSwitcher({
@@ -20,6 +28,7 @@ export default function WorkspaceSwitcher({
   onRename,
   onDelete,
   onMoveToNewWindow,
+  onSetEnvLabel,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [focusedIndex, setFocusedIndex] = useState(0)
@@ -204,6 +213,23 @@ export default function WorkspaceSwitcher({
                         {ws.name}
                       </span>
 
+                      {/* Env label badge */}
+                      {ws.envLabel && (
+                        <span style={{
+                          fontSize: 9,
+                          fontWeight: 600,
+                          letterSpacing: '0.06em',
+                          textTransform: 'uppercase',
+                          color: ENV_COLORS[ws.envLabel],
+                          border: `1px solid ${ENV_COLORS[ws.envLabel]}55`,
+                          borderRadius: 3,
+                          padding: '1px 5px',
+                          flexShrink: 0,
+                        }}>
+                          {ws.envLabel}
+                        </span>
+                      )}
+
                       {/* Active dot */}
                       {isActive && (
                         <span style={{
@@ -271,6 +297,7 @@ export default function WorkspaceSwitcher({
           y={contextMenu.y}
           wsId={contextMenu.wsId}
           wsCount={workspaces.length}
+          currentEnvLabel={workspaces.find(w => w.id === contextMenu.wsId)?.envLabel}
           onClose={() => setContextMenu(null)}
           onRename={() => {
             const id = contextMenu.wsId
@@ -282,6 +309,7 @@ export default function WorkspaceSwitcher({
           }}
           onDelete={() => { setContextMenu(null); onDelete(contextMenu.wsId) }}
           onMoveToNewWindow={() => { setContextMenu(null); onMoveToNewWindow(contextMenu.wsId) }}
+          onSetEnvLabel={(label) => { setContextMenu(null); onSetEnvLabel(contextMenu.wsId, label) }}
         />
       )}
     </div>
@@ -290,14 +318,19 @@ export default function WorkspaceSwitcher({
 
 // ─── Right-click context menu ─────────────────────────────────────────────────
 
+const ENV_LABELS: EnvLabel[] = ['local', 'dev', 'staging', 'prod']
+
 function WsContextMenu({
-  x, y, wsCount, onClose, onRename, onDelete, onMoveToNewWindow,
+  x, y, wsCount, currentEnvLabel, onClose, onRename, onDelete, onMoveToNewWindow, onSetEnvLabel,
 }: {
   x: number; y: number; wsId: string; wsCount: number
+  currentEnvLabel?: EnvLabel
   onClose: () => void; onRename: () => void; onDelete: () => void
   onMoveToNewWindow: () => void
+  onSetEnvLabel: (label: EnvLabel | undefined) => void
 }) {
   const [hovered, setHovered] = useState<string | null>(null)
+  const [envMenuOpen, setEnvMenuOpen] = useState(false)
 
   return (
     <>
@@ -322,6 +355,81 @@ function WsContextMenu({
         <CMenuItem hovered={hovered === 'rename'} onHover={() => setHovered('rename')} onLeave={() => setHovered(null)} onClick={onRename}>
           Rename Workspace
         </CMenuItem>
+
+        {/* Environment label submenu */}
+        <div
+          onMouseEnter={() => { setHovered('env'); setEnvMenuOpen(true) }}
+          onMouseLeave={() => { setHovered(null); setEnvMenuOpen(false) }}
+          style={{ position: 'relative' }}
+        >
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '6px 14px',
+            fontSize: 13,
+            color: 'var(--text-primary)',
+            cursor: 'pointer',
+            background: hovered === 'env' ? 'var(--accent-glow)' : 'transparent',
+            transition: 'background 0.1s',
+            userSelect: 'none',
+          }}>
+            <span>Set Environment</span>
+            <span style={{ opacity: 0.5, fontSize: 10 }}>▶</span>
+          </div>
+          {envMenuOpen && (
+            <div style={{
+              position: 'absolute',
+              left: '100%',
+              top: 0,
+              background: 'var(--bg-overlay)',
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              padding: '4px 0',
+              minWidth: 140,
+              boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+              backdropFilter: 'blur(12px)',
+              zIndex: 10000,
+            }}>
+              {ENV_LABELS.map(label => (
+                <div
+                  key={label}
+                  onClick={(e) => { e.stopPropagation(); onSetEnvLabel(label) }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '6px 14px',
+                    fontSize: 13,
+                    color: 'var(--text-primary)',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--accent-glow)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: ENV_COLORS[label], flexShrink: 0 }} />
+                  <span style={{ flex: 1, textTransform: 'capitalize' }}>{label}</span>
+                  {currentEnvLabel === label && <span style={{ fontSize: 11, color: 'var(--accent)' }}>✓</span>}
+                </div>
+              ))}
+              {currentEnvLabel && (
+                <>
+                  <div style={{ height: 1, background: 'var(--border)', margin: '3px 8px' }} />
+                  <div
+                    onClick={(e) => { e.stopPropagation(); onSetEnvLabel(undefined) }}
+                    style={{ padding: '6px 14px', fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none' }}
+                    onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-secondary)')}
+                    onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+                  >
+                    Clear label
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
         {wsCount > 1 && (
           <>
             <CMenuItem hovered={hovered === 'move'} onHover={() => setHovered('move')} onLeave={() => setHovered(null)} onClick={onMoveToNewWindow}>

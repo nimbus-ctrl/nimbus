@@ -7,6 +7,9 @@ import SplitPaneContainer from './components/SplitPaneContainer'
 import WorkspaceSwitcher from './components/WorkspaceSwitcher'
 import CommandPalette from './components/CommandPalette'
 import CommandMemoryPalette from './components/CommandMemoryPalette'
+import ContextBar from './components/ContextBar'
+import KeyboardShortcuts from './components/KeyboardShortcuts'
+import { useContextIdentity } from './hooks/useContextIdentity'
 import {
   prepareMigration, getPaneBuffer, registerIncomingMigration, preloadBuffer,
   getPaneCwd, preloadCwd,
@@ -16,7 +19,7 @@ import type { CommandRecord } from './components/CommandCard'
 import { useCommands } from './hooks/useCommands'
 import { useCommandMemory } from './hooks/useCommandMemory'
 import type { SplitNode, SplitDirection } from './types/splitTree'
-import type { Workspace } from './types/workspace'
+import type { Workspace, EnvLabel } from './types/workspace'
 import { splitPane, removePane, findAllPaneIds, setRatioAtBranch } from './utils/splitTree'
 
 export interface Tab {
@@ -166,6 +169,7 @@ export default function App() {
   const [aiDockPosition, setAiDockPosition] = useState<DockPosition>('bottom')
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [commandMemoryOpen, setCommandMemoryOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [historyEnabled, setHistoryEnabled] = useState<boolean>(
     () => localStorage.getItem('nimbus:prefs:history') !== 'false'
   )
@@ -456,6 +460,11 @@ export default function App() {
         setCommandMemoryOpen(prev => !prev)
         return
       }
+      if (e.metaKey && e.key === '/') {
+        e.preventDefault()
+        setShortcutsOpen(prev => !prev)
+        return
+      }
 
       if (commandPaletteOpen) return
 
@@ -550,6 +559,10 @@ export default function App() {
         : ws.activeTabId
       return { ...ws, tabs: next, activeTabId: newActiveTabId }
     })
+  }, [updateActiveWorkspace])
+
+  const reorderTabs = useCallback((newTabs: Tab[]) => {
+    updateActiveWorkspace(ws => ({ ...ws, tabs: newTabs }))
   }, [updateActiveWorkspace])
 
   const toggleBookmark = useCallback((id: string) => {
@@ -734,6 +747,12 @@ export default function App() {
     ))
   }, [])
 
+  const setWorkspaceEnvLabel = useCallback((id: string, label: EnvLabel | undefined) => {
+    setWorkspaces(prev => prev.map(ws =>
+      ws.id === id ? { ...ws, envLabel: label } : ws
+    ))
+  }, [])
+
   const switchWorkspace = useCallback((id: string) => {
     setActiveWorkspaceId(id)
   }, [])
@@ -815,6 +834,9 @@ export default function App() {
 
   // ─── Command Memory ─────────────────────────────────────────────────────────
   const commandMemory = useCommandMemory(activeCwd, activeWorkspaceId)
+
+  // ─── Context Identity (git branch, CWD for the active pane) ─────────────────
+  const contextIdentity = useContextIdentity(activePaneId)
 
   const promptRename = useCallback((id: string) => {
     const tab = tabs.find(t => t.id === id)
@@ -899,6 +921,7 @@ export default function App() {
             onRename={renameWorkspace}
             onDelete={deleteWorkspace}
             onMoveToNewWindow={moveWorkspaceToNewWindow}
+            onSetEnvLabel={setWorkspaceEnvLabel}
           />
         </div>
 
@@ -931,6 +954,7 @@ export default function App() {
               workspaces={workspaces}
               currentWorkspaceId={activeWorkspaceId}
               onMoveTabToWorkspace={moveTabToWorkspace}
+              onReorder={reorderTabs}
               embedded
             />
           </motion.div>
@@ -981,6 +1005,9 @@ export default function App() {
           </motion.button>
         </div>
       </div>
+
+      {/* Context bar — git branch, CWD, env label */}
+      <ContextBar context={contextIdentity} envLabel={activeWorkspace?.envLabel} />
 
       {/* Main area */}
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
@@ -1112,6 +1139,8 @@ export default function App() {
         })}
         onRecordUsage={(cmd) => commandMemory.recordUsage(cmd, activeCwd)}
       />
+
+      <KeyboardShortcuts open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </div>
   )
 }

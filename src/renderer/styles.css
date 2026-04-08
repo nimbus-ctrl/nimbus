@@ -16,6 +16,9 @@
   --border-active: #7c6af760;
   --danger: #f76a6a;
   --success: #6af7a0;
+  --warning: #f7b96a;
+  --elevated: #f79a6a;
+  --network: #6ab4f7;
 }
 
 * {
